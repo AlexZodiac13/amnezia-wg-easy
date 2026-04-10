@@ -75,6 +75,31 @@ You can also install WireGuard Easy with the [docker run command](https://wg-eas
 
 Now [setup a reverse proxy](https://wg-easy.github.io/wg-easy/latest/examples/tutorials/basic-installation/#setup-reverse-proxy) to be able to access the Web UI securely from the internet. This step is optional, just make sure to follow the guide [here](https://wg-easy.github.io/wg-easy/latest/examples/tutorials/reverse-proxyless/) if you decide not to do it.
 
+## AmneziaWG Mode (awg)
+
+This repository is configured to run `wg-easy` in strict AmneziaWG mode:
+
+- `EXPERIMENTAL_AWG=true`
+- `OVERRIDE_AUTO_AWG=awg`
+
+Before starting containers, install AmneziaWG kernel module on the host:
+
+```shell
+sudo apt update
+sudo apt install -y software-properties-common python3-launchpadlib gnupg2 linux-headers-$(uname -r)
+sudo add-apt-repository ppa:amnezia/ppa
+sudo apt-get update
+sudo apt-get install -y amneziawg
+```
+
+Then run:
+
+```shell
+docker compose up -d --build
+```
+
+If the kernel module is not loaded on the host, wg-easy cannot bring up the VPN interface in AmneziaWG mode.
+
 ## Donate
 
 Are you enjoying this project? Consider donating.

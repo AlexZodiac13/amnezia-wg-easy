@@ -1,0 +1,14 @@
+services:
+  admin:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin
+      SECRET_KEY: change-me-in-production
+      SERVER_ENDPOINT_HOST: owgrant.home
+      SERVER_ENDPOINT_PORT: 51820
+      DATABASE_PATH: /data/app.db
+    volumes:
+      - ./data:/app/data

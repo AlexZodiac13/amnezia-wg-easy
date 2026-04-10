@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <div class="eyebrow">AmneziaWG admin</div>
+    <h1>Панель управления VPN</h1>
+    <p class="muted">Локальная БД, веб-интерфейс и API для будущего Telegram-бота.</p>
+  </div>
+  <form method="post" action="/logout">
+    <button class="ghost" type="submit">Выйти</button>
+  </form>
+</header>
+
+<section class="stats-grid">
+  <article class="stat-card">
+    <span>Peers</span>
+    <strong>{{ stats.total }}</strong>
+  </article>
+  <article class="stat-card">
+    <span>Активные</span>
+    <strong>{{ stats.enabled }}</strong>
+  </article>
+  <article class="stat-card">
+    <span>Endpoint</span>
+    <strong>{{ server_endpoint }}</strong>
+  </article>
+  <article class="stat-card">
+    <span>Interface</span>
+    <strong>{{ settings.interface_name }}</strong>
+  </article>
+</section>
+
+<section class="panel-grid">
+  <article class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Создать peer</h2>
+        <p class="muted">Пользователь получает готовую конфигурацию и QR-код.</p>
+      </div>
+    </div>
+    <form class="inline-form" method="post" action="/peers">
+      <input name="name" placeholder="client-01" maxlength="64" required>
+      <button class="primary" type="submit">Создать</button>
+    </form>
+  </article>
+
+  <article class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>API</h2>
+        <p class="muted">Готовая база для интеграции с ботом и внешними системами.</p>
+      </div>
+    </div>
+    <div class="codebox">
+      <div>GET /api/peers</div>
+      <div>POST /api/peers</div>
+      <div>GET /api/peers/{id}</div>
+      <div>POST /api/peers/{id}/toggle</div>
+      <div>DELETE /api/peers/{id}</div>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Peers</h2>
+      <p class="muted">Управление конфигами и статусом подключений.</p>
+    </div>
+  </div>
+
+  <div class="peer-list">
+    {% for peer in peers %}
+    <article class="peer-card {% if not peer.enabled %}peer-disabled{% endif %}">
+      <div class="peer-main">
+        <div>
+          <h3>{{ peer.name }}</h3>
+          <p class="muted">{{ peer.client_ip }} · created {{ peer.created_at }}</p>
+        </div>
+        <span class="badge {% if peer.enabled %}badge-on{% else %}badge-off{% endif %}">
+          {% if peer.enabled %}enabled{% else %}disabled{% endif %}
+        </span>
+      </div>
+      <div class="peer-actions">
+        <a class="secondary" href="/peers/{{ peer.id }}">Открыть</a>
+        <form method="post" action="/peers/{{ peer.id }}/toggle">
+          <button class="ghost" type="submit">Toggle</button>
+        </form>
+        <form method="post" action="/peers/{{ peer.id }}/delete" onsubmit="return confirm('Удалить peer?')">
+          <button class="danger" type="submit">Delete</button>
+        </form>
+      </div>
+    </article>
+    {% else %}
+    <div class="empty-state">
+      Пока нет peer. Создайте первый клиент, чтобы получить QR и config.
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="auth-card">
+  <div class="eyebrow">AmneziaWG control plane</div>
+  <h1>{{ app_name }}</h1>
+  <p class="muted">Админ-панель для управления peers, конфигурациями и API.</p>
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+  <form class="stack" method="post" action="/login">
+    <label>
+      <span>Логин</span>
+      <input name="username" autocomplete="username" placeholder="admin" required>
+    </label>
+    <label>
+      <span>Пароль</span>
+      <input type="password" name="password" autocomplete="current-password" placeholder="••••••••" required>
+    </label>
+    <button class="primary" type="submit">Войти</button>
+  </form>
+</section>
+{% endblock %}

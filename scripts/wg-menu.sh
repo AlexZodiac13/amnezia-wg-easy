@@ -85,17 +85,16 @@ while true; do
         
         case $action in
             1)
-                read -p "Скорость скачивания (например, 15mbit): " dl
-                read -p "Скорость отдачи (например, 15mbit): " ul
+                read -p "Укажите общую скорость (симметрично, например, 15mbit): " rate
                 echo "=> Применяем лимиты в контейнере..."
                 # Запускаем целевой скрипт в нужном неймспейсе
-                nsenter -t "$PID" -n "$LIMIT_SCRIPT" start "$selected_ip" "$dl" "$ul"
+                nsenter -t "$PID" -n "$LIMIT_SCRIPT" add "$selected_ip" "$rate"
                 echo "Готово!"
                 echo ""
                 ;;
             2)
                 echo "=> Снимаем лимиты..."
-                nsenter -t "$PID" -n "$LIMIT_SCRIPT" stop "$selected_ip"
+                nsenter -t "$PID" -n "$LIMIT_SCRIPT" del "$selected_ip"
                 echo "Готово!"
                 echo ""
                 ;;

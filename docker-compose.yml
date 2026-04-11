@@ -1,28 +1,18 @@
 services:
   amnezia-wg-easy:
-    #environment:
-    #  Optional:
-    #  - PORT=51821
-    #  - HOST=0.0.0.0
-    #  - INSECURE=false
-
     image: ghcr.io/wg-easy/wg-easy:15
     container_name: amnezia-wg-easy
     environment:
-      - PORT=51821
-      - WG_PORT=5061
-      - WG_DEFAULT_ADDRESS=10.9.0.x
       - INSECURE=true
       - EXPERIMENTAL_AWG=true
       - OVERRIDE_AUTO_AWG=awg
     volumes:
-      - ./amnezia-wg-easy:/etc/wireguard
+      - ./amnezia-data:/etc/wireguard
       - /lib/modules:/lib/modules:ro
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
       - "5061:5061/udp"
-      - "51821:51821/tcp"
     restart: unless-stopped
     cap_add:
       - NET_ADMIN

@@ -8,6 +8,7 @@
 sudo apt update
 sudo apt install -y linux-headers-$(uname -r) amneziawg-dkms amneziawg-tools
 ```
+Подробности [amnezia-vpn](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)
 
 ## 2. Запуск VPN
 Убедитесь, что настроен файл `docker-compose.yml` (пароли, порты). Настройки сохраняются в папке `amnezia-data`.

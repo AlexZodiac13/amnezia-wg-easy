@@ -5,8 +5,12 @@
 
 Для Debian/Ubuntu:
 ```bash
-sudo apt update
-sudo apt install -y linux-headers-$(uname -r) amneziawg-dkms amneziawg-tools
+sudo apt install -y software-properties-common python3-launchpadlib gnupg2 linux-headers-$(uname -r)
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 57290828
+echo "deb https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
+echo "deb-src https://ppa.launchpadcontent.net/amnezia/ppa/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
+sudo apt-get update
+sudo apt-get install -y amneziawg
 ```
 Подробности [amnezia-vpn](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module)
 

@@ -1,0 +1,31 @@
+services:
+  awg:
+    build:
+      context: ./awg
+      dockerfile: Dockerfile
+    container_name: awg-core
+    network_mode: host
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AWG_INTERFACE: awg0
+      AWG_LISTEN_PORT: 5060
+      AWG_ADDRESS: 10.80.0.1/24
+      AWG_MTU: 1280
+      AWG_DNS: 1.1.1.1
+      AWG_TABLE: off
+      AWG_JC: "4"
+      AWG_JMIN: "40"
+      AWG_JMAX: "70"
+      AWG_S1: "0"
+      AWG_S2: "0"
+      AWG_H1: "1"
+      AWG_H2: "2"
+      AWG_H3: "3"
+      AWG_H4: "4"
+    volumes:
+      - ./awg/data:/etc/amnezia
+      - ./awg/scripts:/opt/awg/scripts

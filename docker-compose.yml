@@ -1,0 +1,62 @@
+services:
+  dnsmasq:
+    build:
+      context: ./dnsmasq
+      dockerfile: Dockerfile
+    container_name: awg-dnsmasq
+    network_mode: service:awg
+    depends_on:
+      - awg
+    restart: unless-stopped
+    volumes:
+      - ./dnsmasq/dnsmasq.conf:/etc/dnsmasq.conf:ro
+      - ./dnsmasq/lists:/etc/dnsmasq.d/lists:ro
+
+  awg:
+    build:
+      context: ./awg
+      dockerfile: Dockerfile
+    container_name: awg-core
+    restart: unless-stopped
+    ports:
+      - "5066:5066/udp"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AWG_INTERFACE: awg0
+      AWG_LISTEN_PORT: 5066
+      AWG_ADDRESS: 10.80.0.1/24
+      AWG_MTU: 1280
+      AWG_DNS: 10.80.0.1
+      AWG_TABLE: off
+      AWG_RATE_LIMIT_MBIT: "15"
+      AWG_WHITELIST_RATE_MBIT: "200"
+      AWG_UNLIMITED_RATE_MBIT: "1000"
+      AWG_JC: "6"
+      AWG_JMIN: "50"
+      AWG_JMAX: "1000"
+      AWG_S1: "68"
+      AWG_S2: "149"
+      AWG_S3: "64"
+      AWG_S4: "16"
+      AWG_H1: "471800590-471800690"
+      AWG_H2: "1246894907-1246895000"
+      AWG_H3: "923637689-923637780"
+      AWG_H4: "1769581055-1869581055"
+      AWG_I1: "<b 0xc700000001><rc 8><t><r 100>"
+      AWG_I2: "<b 0xf6ab3267fa><t><rc 20><r 80>"
+      AWG_I3: ""
+      AWG_I4: ""
+      AWG_I5: ""
+      AWG_CLIENT_PERSISTENT_KEEPALIVE: "25"
+    volumes:
+      - ./awg/data:/etc/amnezia/amneziawg
+      - ./awg/scripts:/opt/awg/scripts
+    networks:
+      - awg-net
+
+networks:
+  awg-net:
+    driver: bridge

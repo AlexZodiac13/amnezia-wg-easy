@@ -6,7 +6,7 @@
 
 - Контейнер `awg-core` на базе `awg-quick` и `amneziawg-go`.
 - Режим сети: `host`.
-- Порт сервера: `5060/udp` (настраивается через env).
+- Порт сервера: `51823/udp` (настраивается через env).
 - Интерфейс: `awg0`.
 - Скрипты управления peer через `awg`:
   - `/opt/awg/scripts/add-peer.sh`
@@ -32,16 +32,36 @@ docker exec -it awg-core awg show awg0
 
 ## Управление peer
 
-Создать клиента и добавить peer:
+Создать клиента и добавить peer с лимитом по умолчанию 15 Мбит:
 
 ```bash
-docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_NAME> <SERVER_IP_OR_DOMAIN>:5066 10.80.0.2/32
+docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_NAME> <SERVER_IP_OR_DOMAIN>:51823 10.80.0.2/32
 ```
 
-Если нужен только ручной режим без генерации клиента, скрипт по-прежнему принимает старый формат:
+Создать клиента с явным лимитом 15 Мбит:
+
+```bash
+docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_NAME> <SERVER_IP_OR_DOMAIN>:51823 10.80.0.3/32 "" 15
+```
+
+Создать клиента с лимитом 200 Мбит для whitelist-пользователя:
+
+```bash
+docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_NAME> <SERVER_IP_OR_DOMAIN>:51823 10.80.0.4/32 "" 200
+```
+
+Создать клиента без ограничения скорости:
+
+```bash
+docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_NAME> <SERVER_IP_OR_DOMAIN>:51823 10.80.0.5/32 "" 0
+```
+
+Если нужен только ручной режим без генерации клиента, скрипт по-прежнему принимает старый формат и тоже поддерживает необязательный `rate_mbit`:
 
 ```bash
 docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_PUBLIC_KEY> 10.80.0.2/32
+docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_PUBLIC_KEY> 10.80.0.2/32 "" 15
+docker exec -it awg-core /opt/awg/scripts/add-peer.sh awg0 <CLIENT_PUBLIC_KEY> 10.80.0.2/32 "" 0
 ```
 
 Удалить peer:
@@ -92,7 +112,7 @@ I2 = DNS:50:000100000001000000000000
 
 [Peer]
 PublicKey = <SERVER_PUBLIC_KEY>
-Endpoint = <SERVER_IP_OR_DOMAIN>:5066
+Endpoint = <SERVER_IP_OR_DOMAIN>:51823
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 ```

@@ -4,8 +4,8 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  add-peer.sh <interface> <client_public_key> <client_ip_cidr> [preshared_key]
-  add-peer.sh <interface> [client_name] [endpoint] [client_ip_cidr] [preshared_key]
+  add-peer.sh <interface> <client_public_key> <client_ip_cidr> [preshared_key] [rate_mbit]
+  add-peer.sh <interface> [client_name] [endpoint] [client_ip_cidr] [preshared_key] [rate_mbit]
 EOF
   exit 1
 }
@@ -17,6 +17,10 @@ CLIENTS_DIR="/etc/amnezia/amneziawg/clients"
 SERVER_CONFIG="/etc/amnezia/amneziawg/${IFACE}.conf"
 SERVER_PUBLIC_KEY_FILE="/etc/amnezia/amneziawg/server_public.key"
 DEFAULT_CLIENT_IP_CIDR="10.80.0.2/32"
+DEFAULT_RATE_MBIT="${AWG_RATE_LIMIT_MBIT:-15}"
+WHITELIST_RATE_MBIT="${AWG_WHITELIST_RATE_MBIT:-200}"
+UNLIMITED_RATE_MBIT="${AWG_UNLIMITED_RATE_MBIT:-1000}"
+ROOT_DEFAULT_CLASS_ID="9999"
 PUBKEY_PATTERN='^[A-Za-z0-9+/]{43}=$'
 
 server_value() {
@@ -36,10 +40,147 @@ server_value() {
   ' "$SERVER_CONFIG"
 }
 
+remove_peer_from_server_config() {
+  local peer_public_key="$1"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v target_key="$peer_public_key" '
+    function trim(s) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+      return s
+    }
+    function flush_block() {
+      if (in_peer == 1) {
+        if (!drop_block) {
+          printf "%s", block
+        }
+      }
+      block = ""
+      in_peer = 0
+      drop_block = 0
+    }
+    {
+      if ($0 ~ /^\[Peer\][[:space:]]*$/) {
+        flush_block()
+        in_peer = 1
+        block = $0 ORS
+        next
+      }
+
+      if (in_peer == 1) {
+        block = block $0 ORS
+        if ($0 ~ /^[[:space:]]*PublicKey[[:space:]]*=/) {
+          line = $0
+          sub(/^[^=]*=[[:space:]]*/, "", line)
+          line = trim(line)
+          if (line == target_key) {
+            drop_block = 1
+          }
+        }
+        next
+      }
+
+      print
+    }
+    END {
+      flush_block()
+    }
+  ' "$SERVER_CONFIG" > "$tmp_file"
+
+  mv "$tmp_file" "$SERVER_CONFIG"
+}
+
+persist_peer_in_server_config() {
+  local peer_public_key="$1"
+  local peer_ip_cidr="$2"
+  local peer_psk="${3:-}"
+
+  remove_peer_from_server_config "$peer_public_key"
+
+  {
+    printf '\n[Peer]\n'
+    printf 'PublicKey = %s\n' "$peer_public_key"
+    [[ -n "$peer_psk" ]] && printf 'PresharedKey = %s\n' "$peer_psk"
+    printf 'AllowedIPs = %s\n' "$peer_ip_cidr"
+  } >> "$SERVER_CONFIG"
+}
+
+default_ext_if() {
+  ip route show default 0.0.0.0/0 | awk 'NR==1{print $5}'
+}
+
+normalize_rate() {
+  local requested_rate="${1:-$DEFAULT_RATE_MBIT}"
+
+  if [[ "$requested_rate" == "0" ]]; then
+    printf '%s\n' "$UNLIMITED_RATE_MBIT"
+    return
+  fi
+
+  if [[ "$requested_rate" =~ ^[0-9]+$ ]]; then
+    if [[ "$requested_rate" -eq "$WHITELIST_RATE_MBIT" ]]; then
+      printf '%s\n' "$WHITELIST_RATE_MBIT"
+      return
+    fi
+
+    if [[ "$requested_rate" -eq "$UNLIMITED_RATE_MBIT" ]]; then
+      printf '%s\n' "$UNLIMITED_RATE_MBIT"
+      return
+    fi
+
+    printf '%s\n' "$requested_rate"
+    return
+  fi
+
+  printf '%s\n' "$DEFAULT_RATE_MBIT"
+}
+
+ensure_htb_root() {
+  local device="$1"
+
+  tc qdisc del dev "$device" root 2>/dev/null || true
+  tc qdisc add dev "$device" root handle 1: htb default "$ROOT_DEFAULT_CLASS_ID" 2>/dev/null || true
+
+  # Keep non-matching traffic out of limited classes.
+  tc class add dev "$device" parent 1: classid "1:${ROOT_DEFAULT_CLASS_ID}" htb rate "${UNLIMITED_RATE_MBIT}mbit" ceil "${UNLIMITED_RATE_MBIT}mbit" 2>/dev/null || true
+
+  tc class add dev "$device" parent 1: classid "1:${DEFAULT_RATE_MBIT}" htb rate "${DEFAULT_RATE_MBIT}mbit" ceil "${DEFAULT_RATE_MBIT}mbit" 2>/dev/null || true
+  tc class add dev "$device" parent 1: classid "1:${WHITELIST_RATE_MBIT}" htb rate "${WHITELIST_RATE_MBIT}mbit" ceil "${WHITELIST_RATE_MBIT}mbit" 2>/dev/null || true
+  tc class add dev "$device" parent 1: classid "1:${UNLIMITED_RATE_MBIT}" htb rate "${UNLIMITED_RATE_MBIT}mbit" ceil "${UNLIMITED_RATE_MBIT}mbit" 2>/dev/null || true
+
+  tc filter add dev "$device" parent 1: protocol ip prio 1 handle "$DEFAULT_RATE_MBIT" fw flowid "1:${DEFAULT_RATE_MBIT}" 2>/dev/null || true
+  tc filter add dev "$device" parent 1: protocol ip prio 1 handle "$WHITELIST_RATE_MBIT" fw flowid "1:${WHITELIST_RATE_MBIT}" 2>/dev/null || true
+  tc filter add dev "$device" parent 1: protocol ip prio 1 handle "$UNLIMITED_RATE_MBIT" fw flowid "1:${UNLIMITED_RATE_MBIT}" 2>/dev/null || true
+}
+
+apply_peer_rate_limit() {
+  local client_ip_cidr="$1"
+  local rate_mbit="$2"
+  local client_ip="${client_ip_cidr%/*}"
+  local ext_if
+
+  ext_if="$(default_ext_if)"
+  [[ -n "$ext_if" ]] || return 0
+
+  ensure_htb_root "$IFACE"
+  ensure_htb_root "$ext_if"
+
+  iptables -t mangle -C PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit" 2>/dev/null || \
+    iptables -t mangle -I PREROUTING 1 -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit"
+
+  iptables -t mangle -C PREROUTING -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark 2>/dev/null || \
+    iptables -t mangle -I PREROUTING 2 -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark
+
+  iptables -t mangle -C PREROUTING -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark 2>/dev/null || \
+    iptables -t mangle -I PREROUTING 1 -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
+}
+
 if [[ $# -ge 2 && ${1:-} =~ $PUBKEY_PATTERN ]]; then
   CLIENT_PUBLIC_KEY="$1"
   CLIENT_IP_CIDR="$2"
   PRESHARED_KEY="${3:-}"
+  CLIENT_RATE_MBIT="$(normalize_rate "${4:-}")"
 
   if [[ -n "$PRESHARED_KEY" ]]; then
     awg set "$IFACE" peer "$CLIENT_PUBLIC_KEY" preshared-key <(printf '%s' "$PRESHARED_KEY") allowed-ips "$CLIENT_IP_CIDR"
@@ -47,11 +188,15 @@ if [[ $# -ge 2 && ${1:-} =~ $PUBKEY_PATTERN ]]; then
     awg set "$IFACE" peer "$CLIENT_PUBLIC_KEY" allowed-ips "$CLIENT_IP_CIDR"
   fi
 
-  echo "Peer added: $CLIENT_PUBLIC_KEY -> $CLIENT_IP_CIDR"
+  persist_peer_in_server_config "$CLIENT_PUBLIC_KEY" "$CLIENT_IP_CIDR" "$PRESHARED_KEY"
+
+  apply_peer_rate_limit "$CLIENT_IP_CIDR" "$CLIENT_RATE_MBIT"
+
+  echo "Peer added: $CLIENT_PUBLIC_KEY -> $CLIENT_IP_CIDR (rate ${CLIENT_RATE_MBIT}mbit)"
   exit 0
 fi
 
-if [[ $# -gt 4 ]]; then
+if [[ $# -gt 5 ]]; then
   usage
 fi
 
@@ -59,6 +204,7 @@ CLIENT_NAME="${1:-client-$(date +%Y%m%d%H%M%S)}"
 ENDPOINT="${2:-${AWG_ENDPOINT:-change-me:5066}}"
 CLIENT_IP_CIDR="${3:-$DEFAULT_CLIENT_IP_CIDR}"
 PRESHARED_KEY="${4:-}"
+CLIENT_RATE_MBIT="$(normalize_rate "${5:-}")"
 CLIENT_PERSISTENT_KEEPALIVE="${AWG_CLIENT_PERSISTENT_KEEPALIVE:-0}"
 
 if [[ ! -f "$SERVER_CONFIG" ]]; then
@@ -106,6 +252,8 @@ if [[ -z "$PRESHARED_KEY" ]]; then
 fi
 
 awg set "$IFACE" peer "$CLIENT_PUBLIC_KEY" preshared-key <(printf '%s' "$PRESHARED_KEY") allowed-ips "$CLIENT_IP_CIDR"
+persist_peer_in_server_config "$CLIENT_PUBLIC_KEY" "$CLIENT_IP_CIDR" "$PRESHARED_KEY"
+apply_peer_rate_limit "$CLIENT_IP_CIDR" "$CLIENT_RATE_MBIT"
 
 {
   printf '%s\n' '[Interface]'
@@ -181,4 +329,4 @@ echo "Client private key: $CLIENT_PRIVATE_KEY_FILE"
 echo "Client public key: $CLIENT_PUBLIC_KEY_FILE"
 [[ -f "$CLIENT_QR_FILE" ]] && echo "Client QR (PNG): $CLIENT_QR_FILE"
 [[ -f "$CLIENT_QR_TXT_FILE" ]] && echo "Client QR (text): $CLIENT_QR_TXT_FILE"
-echo "Peer added: $CLIENT_PUBLIC_KEY -> $CLIENT_IP_CIDR"
+echo "Peer added: $CLIENT_PUBLIC_KEY -> $CLIENT_IP_CIDR (rate ${CLIENT_RATE_MBIT}mbit)"

@@ -9,5 +9,5 @@ fi
 IFACE="$1"
 CLIENT_PUBLIC_KEY="$2"
 
-wg set "$IFACE" peer "$CLIENT_PUBLIC_KEY" remove
+awg set "$IFACE" peer "$CLIENT_PUBLIC_KEY" remove
 echo "Peer removed: $CLIENT_PUBLIC_KEY"

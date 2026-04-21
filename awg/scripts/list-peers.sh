@@ -7,4 +7,4 @@ if [[ $# -ne 1 ]]; then
 fi
 
 IFACE="$1"
-wg show "$IFACE" dump
+awg show "$IFACE" dump

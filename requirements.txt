@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-jinja2
-itsdangerous
-python-multipart
-passlib
-pydantic-settings
-cryptography
-segno

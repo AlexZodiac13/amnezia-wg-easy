@@ -287,6 +287,8 @@ apply_peer_rate_limit "$CLIENT_IP_CIDR" "$CLIENT_RATE_MBIT"
   printf 'Endpoint = %s\n' "$ENDPOINT"
   printf 'AllowedIPs = 0.0.0.0/0, ::/0\n'
   printf 'PersistentKeepalive = %s\n' "$CLIENT_PERSISTENT_KEEPALIVE"
+  printf '\n# Rate limit (in Mbit/s) - do not edit\n'
+  printf '# Rate = %s\n' "$CLIENT_RATE_MBIT"
 } > "$CLIENT_CONFIG_FILE"
 
 # Make config readable (755 dir, 644 files)

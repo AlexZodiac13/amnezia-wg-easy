@@ -130,6 +130,64 @@ restore_peers_from_clients() {
   fi
 }
 
+restore_peer_rate_limits() {
+  local clients_dir="${CONFIG_DIR}/clients"
+  local ext_if
+  local client_conf
+  local client_ip
+  local client_rate
+  local restored=0
+
+  read_conf_value() {
+    local key="$1"
+    local file="$2"
+    awk -v wanted_key="$key" '
+      {
+        current_key = $1
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", current_key)
+        if (current_key == wanted_key) {
+          value = substr($0, index($0, "=") + 1)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+          print value
+          exit
+        }
+      }
+    ' "$file"
+  }
+
+  [[ -d "$clients_dir" ]] || return 0
+
+  ext_if="$(ip route show default 0.0.0.0/0 | awk 'NR==1{print $5}')"
+  if [[ -n "$ext_if" ]]; then
+    # Restore connmark on return traffic so download shaping still works after restart.
+    iptables -t mangle -C PREROUTING -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark 2>/dev/null || \
+      iptables -t mangle -I PREROUTING 1 -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
+  fi
+
+  shopt -s nullglob
+  for client_conf in "$clients_dir"/*.conf; do
+    client_ip="$(read_conf_value "Address" "$client_conf")"
+    # Parse Rate from comment: "# Rate = 50"
+    client_rate="$(awk '/^[[:space:]]*#[[:space:]]*Rate[[:space:]]*=/ { match($0, /[0-9]+/); if (RSTART) print substr($0, RSTART, RLENGTH); exit }' "$client_conf" || true)"
+
+    [[ -n "$client_ip" && -n "$client_rate" ]] || continue
+
+    # Apply iptables marks for this peer
+    iptables -t mangle -C PREROUTING -i "$AWG_INTERFACE" -s "$client_ip" -j MARK --set-mark "$client_rate" 2>/dev/null || \
+      iptables -t mangle -I PREROUTING 1 -i "$AWG_INTERFACE" -s "$client_ip" -j MARK --set-mark "$client_rate"
+
+    iptables -t mangle -C PREROUTING -i "$AWG_INTERFACE" -s "$client_ip" -j CONNMARK --save-mark 2>/dev/null || \
+      iptables -t mangle -I PREROUTING 2 -i "$AWG_INTERFACE" -s "$client_ip" -j CONNMARK --save-mark
+
+    restored=$((restored + 1))
+  done
+  shopt -u nullglob
+
+  if [[ "$restored" -gt 0 ]]; then
+    echo "Restored rate limits for ${restored} peers"
+  fi
+}
+
 if ! awg show "$AWG_INTERFACE" peers | grep -q .; then
   restore_peers_from_clients
 fi
@@ -159,6 +217,9 @@ if [[ -n "${EXT_IF}" ]]; then
   ensure_htb_root "${AWG_INTERFACE}"
   ensure_htb_root "${EXT_IF}"
 fi
+
+# Restore per-peer rate limits from client configs (always, not just when EXT_IF is set)
+restore_peer_rate_limits
 
 if [[ -n "${EXT_IF}" && -n "${AWG_SUBNET}" ]]; then
   iptables -C FORWARD -i "${AWG_INTERFACE}" -j ACCEPT 2>/dev/null || \

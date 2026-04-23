@@ -123,4 +123,182 @@ PersistentKeepalive = 25
 - `./awg/data/clients/<CLIENT_NAME>.publickey`
 - `./awg/data/clients/<CLIENT_NAME>.conf`
 
+## 🤖 Telegram Bot для управления VPN
+
+Проект включает полнофункциональный Telegram бот для управления VPN конфигурациями пользователями.
+
+### Возможности бота
+
+- ✅ Создание VPN конфигов через Telegram
+- ✅ QR-коды для мобильных приложений
+- ✅ Экспорт в формате WireGuard и Amnezia
+- ✅ Управление сроком действия конфигов
+- ✅ Автоматические уведомления об истечении
+- ✅ Администраторская панель для управления пользователями
+- ✅ Ограничение пропускной способности per-peer
+- ✅ Автоматическое восстановление ограничений при перезагрузке
+
+### Быстрый старт с ботом
+
+```bash
+# 1. Скопировать шаблон конфигурации
+cp .env.bot .env
+
+# 2. Отредактировать .env с вашими данными
+nano .env
+
+# 3. Запустить с ботом
+docker compose up -d
+
+# 4. Проверить логи
+docker compose logs -f bot
+```
+
+### Требования для бота
+
+- Telegram Bot Token (от [@BotFather](https://t.me/BotFather))
+- Ваш Telegram ID (от [@userinfobot](https://t.me/userinfobot))
+- PostgreSQL 16 (включена в docker-compose)
+
+### Команды бота
+
+Пользователю:
+- `/start` - Начало
+- `/config` - Получить конфиг
+- `/info` - Информация об аккаунте
+- `/help` - Справка
+
+Администратору (дополнительно):
+- `/users` - Список пользователей
+- `/stats` - Статистика
+
+### Структура проекта бота
+
+```
+bot/
+├── main.py                 # Входная точка
+├── Dockerfile             # Контейнер бота
+├── requirements.txt       # Зависимости
+└── src/
+    ├── config.py          # Конфигурация
+    ├── scheduler.py       # Планировщик задач
+    ├── database/          # БД модели
+    ├── handlers/          # Обработчики команд
+    └── services/          # Бизнес-логика
+```
+
+### Дополнительная документация
+
+- 📖 [BOT_SETUP.md](docs/BOT_SETUP.md) - Подробная инструкция по настройке бота
+- 🧪 [TESTING.md](docs/TESTING.md) - Тестирование и примеры использования
+- 📋 [README_BOT.md](docs/README_BOT.md) - Полная документация по боту
+
+### Стек технологий для бота
+
+- Python 3.11 с aiogram 3.4.1
+- PostgreSQL 16 для хранения данных
+- SQLAlchemy 2.0 ORM
+- APScheduler для автоматизации
+- Docker для развертывания
+
+## 🛠️ Rate Limiting (Ограничение скорости)
+
+### Как работает
+
+Скорость ограничивается двумя способами:
+
+1. **Upload** (на интерфейсе awg0):
+   - iptables MARK правила для каждого пира
+   - tc (traffic control) с HTB дисциплиной
+
+2. **Download** (на eth0):
+   - iptables CONNMARK для обратного трафика
+   - Восстанавливается при перезагрузке контейнера
+
+### Восстановление при перезагрузке
+
+Лимиты сохраняются в комментариях файлов конфига и автоматически восстанавливаются при старте контейнера через функцию `restore_peer_rate_limits()` в `entrypoint.sh`.
+
+### Настройка лимитов через бота
+
+```bash
+# Переменная окружения
+DEFAULT_RATE_LIMIT=15  # Mbit/s по умолчанию
+```
+
+При создании конфига через бота можно изменить лимит в коде:
+```python
+await PeerManager.add_peer(
+    client_name=client_name,
+    client_ip=next_ip,
+    rate_limit=20  # Изменить здесь
+)
+```
+
+## 📊 Архитектура системы
+
+```
+┌─────────────────────────────────────┐
+│   Telegram Users                    │
+└────────┬────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐
+│   Telegram Bot (Python/aiogram)     │
+│   - Handlers                        │
+│   - Config generation               │
+│   - Notifications                   │
+└────┬────────────────────────────┬───┘
+     │                            │
+     ▼                            ▼
+┌──────────────┐        ┌──────────────────┐
+│  PostgreSQL  │        │   AmneziaWG VPN  │
+│   (configs)  │        │   (awg-core)     │
+│  (users)     │        │                  │
+└──────────────┘        │  Rate limiting:  │
+                        │  - iptables MARK │
+                        │  - tc HTB        │
+                        └──────────────────┘
+```
+
+## 🔐 Безопасность
+
+- Все пароли хранятся в `.env` и никогда не коммитятся
+- БД использует асинхронный драйвер (asyncpg) 
+- WireGuard обеспечивает шифрование трафика
+- Docker сети изолируют сервисы
+- Логирование всех администраторских действий
+
+## 🚀 Развертывание на продакшене
+
+```bash
+# 1. Клонировать репо
+git clone <your-repo>
+cd amnezia-wg-easy
+
+# 2. Настроить переменные
+cp .env.bot .env
+# Отредактировать с боевыми данными
+
+# 3. Запустить
+docker compose -f docker-compose.yml up -d
+
+# 4. Проверить
+docker compose ps
+docker compose logs
+```
+
+## 📞 Поддержка и вклад
+
+Приветствуются Pull Requests и Issues!
+
+Контакты:
+- 📧 Email: support@example.com
+- 🐛 Issues: GitHub Issues
+- 💬 Telegram: [@supportbot](https://t.me/supportbot)
+
+---
+
+**Полнофункциональное решение для управления VPN через Telegram** 🚀
+
 5. Импортируйте `client.conf` в AmneziaVPN или используйте его в любом AWG/WireGuard-клиенте, который поддерживает AmneziaWG 2.0.

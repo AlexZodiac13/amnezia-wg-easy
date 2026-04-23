@@ -57,6 +57,61 @@ services:
     networks:
       - awg-net
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: amnezia-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-amnezia_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-bot_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+    volumes:
+      - ./bot/data/db:/var/lib/postgresql/data
+    networks:
+      - awg-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bot_user} -d ${POSTGRES_DB:-amnezia_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: amnezia-bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      awg:
+        condition: service_started
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      ADMIN_TELEGRAM_ID: ${ADMIN_TELEGRAM_ID}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-amnezia_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-bot_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+      AWG_INTERFACE: awg0
+      AWG_LISTEN_PORT: 5066
+      AWG_SUBNET: 10.80.0.1/24
+      AWG_DNS: 10.80.0.1
+      AWG_CONTAINER_NAME: awg-core
+      SCRIPTS_DIR: /app/scripts
+      CONFIGS_DIR: /etc/amnezia/amneziawg/clients
+      DEFAULT_RATE_LIMIT: ${DEFAULT_RATE_LIMIT:-15}
+      EXPIRATION_DAYS: ${EXPIRATION_DAYS:-30}
+      NOTIFICATION_DAYS: ${NOTIFICATION_DAYS:-3}
+    volumes:
+      - ./bot/src:/app/src
+      - ./awg/scripts:/app/scripts:ro
+      - ./awg/data:/etc/amnezia/amneziawg
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - awg-net
+
 networks:
   awg-net:
     driver: bridge

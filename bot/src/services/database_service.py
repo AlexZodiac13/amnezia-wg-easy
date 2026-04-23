@@ -77,7 +77,7 @@ class DatabaseService:
                 )
             ).order_by(Config.created_at.desc())
         )
-        return result.scalar_one_or_none()
+        return result.scalars().first()
     
     @staticmethod
     async def get_config_by_id(session: AsyncSession, config_id: str) -> Config:

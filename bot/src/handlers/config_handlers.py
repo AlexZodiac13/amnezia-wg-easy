@@ -113,12 +113,12 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
             # Отправить QR-код
             if qr_bytes:
                 await target_message.answer_photo(
-                    photo=types.BufferedFile(file=qr_bytes, filename="qr_code.png"),
+                    photo=types.BufferedInputFile(file=qr_bytes, filename="qr_code.png"),
                     caption="📱 QR-код для сканирования"
                 )
 
             # Отправить файл конфига
-            config_file = types.BufferedFile(
+            config_file = types.BufferedInputFile(
                 file=config_content.encode(),
                 filename=f"{client_name}.conf"
             )
@@ -130,7 +130,7 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
             # Отправить JSON бекап
             import json
             backup_json = json.dumps(amnezia_backup, indent=2)
-            backup_file = types.BufferedFile(
+            backup_file = types.BufferedInputFile(
                 file=backup_json.encode(),
                 filename=f"{client_name}_amnezia_backup.json"
             )
@@ -205,12 +205,12 @@ async def show_current_config(query: types.CallbackQuery):
         # Отправить QR-код
         if qr_bytes:
             await query.message.answer_photo(
-                photo=types.BufferedFile(file=qr_bytes, filename="qr_code.png"),
+                photo=types.BufferedInputFile(file=qr_bytes, filename="qr_code.png"),
                 caption="📱 QR-код для сканирования"
             )
         
         # Отправить файл конфига
-        config_file = types.BufferedFile(
+        config_file = types.BufferedInputFile(
             file=config.wg_config_content.encode(),
             filename=f"{config.client_name}.conf"
         )
@@ -222,7 +222,7 @@ async def show_current_config(query: types.CallbackQuery):
         # Отправить JSON бекап
         import json
         backup_json = json.dumps(amnezia_backup, indent=2)
-        backup_file = types.BufferedFile(
+        backup_file = types.BufferedInputFile(
             file=backup_json.encode(),
             filename=f"{config.client_name}_amnezia_backup.json"
         )

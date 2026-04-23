@@ -1,146 +1,115 @@
-import subprocess
+import asyncio
 import json
 import os
-import socket
-from pathlib import Path
-from src.config import Config
 import logging
+from datetime import datetime
+from src.config import Config
+from src.services.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 
 class PeerManager:
-    """Управление WireGuard пирами через скрипты"""
-
+    """Управление AmneziaWG через Docker Engine API (Async Mode)"""
     @staticmethod
-    def _docker_request(method: str, path: str, body: dict | None = None) -> dict:
-        payload = json.dumps(body).encode() if body is not None else b""
-        request = [
-            f"{method} {path} HTTP/1.1",
-            "Host: docker",
-            f"Content-Length: {len(payload)}",
-            "Content-Type: application/json",
-            "",
-            "",
-        ]
-        request_bytes = "\r\n".join(request).encode() + payload
-
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect("/var/run/docker.sock")
-        sock.sendall(request_bytes)
-
-        response = b""
-        while True:
-            chunk = sock.recv(4096)
-            if not chunk:
-                break
-            response += chunk
-        sock.close()
-
-        header_blob, _, response_body = response.partition(b"\r\n\r\n")
-        header_lines = header_blob.decode(errors="replace").splitlines()
-        status_line = header_lines[0] if header_lines else "HTTP/1.1 500"
-        status_code = int(status_line.split()[1])
-
-        return {
-            "status_code": status_code,
-            "body": response_body,
-        }
-
-    @staticmethod
-    def _run_script_in_awg(script_name: str, args: list[str]) -> subprocess.CompletedProcess:
-        """Выполняет скрипт внутри контейнера awg-core через Docker Engine API."""
-        container_name = Config.AWG_CONTAINER_NAME
-        script_path = f"/opt/awg/scripts/{script_name}"
-        create_response = PeerManager._docker_request(
-            "POST",
-            f"/containers/{container_name}/exec",
-            {
-                "AttachStdout": True,
-                "AttachStderr": True,
-                "Tty": False,
-                "Cmd": ["bash", script_path, *args],
-            },
-        )
-
-        if create_response["status_code"] >= 400:
-            return subprocess.CompletedProcess(
-                args=["docker-api", container_name, script_path, *args],
-                returncode=create_response["status_code"],
-                stdout="",
-                stderr=create_response["body"].decode(errors="replace"),
-            )
-
-        exec_id = json.loads(create_response["body"].decode())["Id"]
-        start_response = PeerManager._docker_request(
-            "POST",
-            f"/exec/{exec_id}/start",
-            {"Detach": False, "Tty": False},
-        )
-
-        if start_response["status_code"] >= 400:
-            return subprocess.CompletedProcess(
-                args=["docker-api", container_name, script_path, *args],
-                returncode=start_response["status_code"],
-                stdout="",
-                stderr=start_response["body"].decode(errors="replace"),
-            )
-
-        inspect_response = PeerManager._docker_request("GET", f"/exec/{exec_id}/json")
-        exit_code = 0
-        if inspect_response["status_code"] < 400:
-            exit_code = json.loads(inspect_response["body"].decode()).get("ExitCode", 0)
-
-        return subprocess.CompletedProcess(
-            args=["docker-api", container_name, script_path, *args],
-            returncode=exit_code,
-            stdout=start_response["body"].decode(errors="replace"),
-            stderr="",
-        )
-    
-    @staticmethod
-    async def add_peer(
-        client_name: str,
-        client_ip: str,
-        rate_limit: int = 15,
-        endpoint: str = None
-    ) -> dict:
-        """Добавить нового пира"""
+    async def _docker_request(method: str, path: str, body: dict | None = None) -> dict:
+        """Асинхронный HTTP запрос к Docker Unix Socket"""
         try:
-            # Скрипт выполняется в awg контейнере
-            result = PeerManager._run_script_in_awg(
-                "add-peer.sh",
-                [
+            # Асинхронное подключение к сокету исключает зависание бота
+            reader, writer = await asyncio.open_unix_connection("/var/run/docker.sock")
+
+            payload = json.dumps(body).encode() if body is not None else b""
+            request = (
+                f"{method} {path} HTTP/1.1\r\n"
+                f"Host: docker\r\n"
+                f"Content-Length: {len(payload)}\r\n"
+                f"Content-Type: application/json\r\n"
+                f"Connection: close\r\n\r\n"
+            ).encode() + payload
+
+            writer.write(request)
+            await writer.drain()
+
+            response = b""
+            while True:
+                chunk = await reader.read(4096)
+                if not chunk:
+                    break
+                response += chunk
+            
+            writer.close()
+            await writer.wait_closed()
+
+            header_blob, _, response_body = response.partition(b"\r\n\r\n")
+            lines = header_blob.decode(errors="replace").splitlines()
+            status_code = int(lines[0].split()[1]) if lines else 500
+
+            return {"status_code": status_code, "body": response_body}
+        except Exception as e:
+            logger.error(f"Docker Socket Error: {e}")
+            return {"status_code": 500, "body": str(e).encode()}
+
+    @staticmethod
+    async def _run_script_in_awg(script_name: str, args: list[str]):
+        """Запуск скрипта внутри контейнера awg-core через API"""
+        container = Config.AWG_CONTAINER_NAME
+        script_path = f"/opt/awg/scripts/{script_name}"
+
+        # 1. Создание exec-инстанса
+        create_res = await PeerManager._docker_request(
+            "POST", f"/containers/{container}/exec",
+            {"AttachStdout": True, "AttachStderr": True, "Cmd": ["bash", script_path, *args]}
+        )
+
+        if create_res["status_code"] != 201:
+            return 1, "", f"Docker Exec Create Failed: {create_res['status_code']}"
+
+        exec_id = json.loads(create_res["body"])["Id"]
+
+        # 2. Старт exec-инстанса
+        start_res = await PeerManager._docker_request("POST", f"/exec/{exec_id}/start", {"Detach": False})
+
+        # Docker возвращает поток в формате: [8 байт заголовка][данные]
+        output = start_res["body"]
+        clean_output = ""
+        if len(output) > 8:
+            # Убираем технические заголовки Docker, чтобы получить чистый текст конфига
+            clean_output = output[8:].decode(errors="ignore").strip()
+
+        return 0, clean_output, ""
+
+    @staticmethod
+    async def add_peer(client_name: str, client_ip: str, rate_limit: int = 15, endpoint: str = None) -> dict:
+        """Добавить нового пира асинхронно"""
+        try:
+            server_url = os.environ.get('SERVER_ENDPOINT', 'wg.owgrant.com')
+            args = [
                 Config.AWG_INTERFACE,
                 client_name,
-                endpoint or f"{os.environ.get('SERVER_ENDPOINT', 'example.com')}:{Config.AWG_LISTEN_PORT}",
-                client_ip + "/32",
-                "",  # preshared_key (пусто, будет сгенерирован)
+                endpoint or f"{server_url}:{Config.AWG_LISTEN_PORT}",
+                f"{client_ip}/32",
+                "", # PSK (генерируется скриптом)
                 str(rate_limit)
-                ],
-            )
-            
-            if result.returncode != 0:
-                logger.error(f"Failed to add peer: {result.stderr}")
-                return {"success": False, "error": result.stderr}
-            
-            logger.info(f"Peer {client_name} added successfully")
-            
-            # Считать конфиг файл
+            ]
+
+            exit_code, stdout, stderr = await PeerManager._run_script_in_awg("add-peer.sh", args)
+
+            if exit_code != 0:
+                return {"success": False, "error": stderr or "Script execution error"}
+
+            # Пытаемся прочитать файл, если скрипт его создал, иначе берем из stdout
             config_path = os.path.join(Config.CONFIGS_DIR, f"{client_name}.conf")
             if os.path.exists(config_path):
                 with open(config_path, 'r') as f:
                     config_content = f.read()
             else:
-                config_content = result.stdout
-            
-            return {
-                "success": True,
-                "message": "Peer added",
-                "config": config_content
-            }
-        
+                config_content = stdout
+
+            if not config_content:
+                return {"success": False, "error": "Empty config generated"}
+
+            return {"success": True, "config": config_content}
         except Exception as e:
-            logger.error(f"Exception in add_peer: {str(e)}")
+            logger.error(f"Critical error in add_peer: {e}")
             return {"success": False, "error": str(e)}
     
     @staticmethod
@@ -156,6 +125,9 @@ class PeerManager:
                             if line.strip().startswith("PrivateKey"):
                                 # Вычислить публичный ключ из приватного
                                 private_key = line.split("=")[1].strip()
+                                # Оставляем синхронный вызов для локальной утилиты wg,
+                                # так как она обычно отрабатывает мгновенно
+                                import subprocess
                                 cmd = ["bash", "-c", f"echo {private_key} | wg pubkey"]
                                 result = subprocess.run(cmd, capture_output=True, text=True)
                                 client_public_key = result.stdout.strip()
@@ -164,18 +136,56 @@ class PeerManager:
             if not client_public_key:
                 return {"success": False, "error": "Public key not found"}
 
-            result = PeerManager._run_script_in_awg(
+            exit_code, stdout, stderr = await PeerManager._run_script_in_awg(
                 "remove-peer.sh",
                 [Config.AWG_INTERFACE, client_public_key],
             )
             
-            if result.returncode != 0:
-                logger.error(f"Failed to remove peer: {result.stderr}")
-                return {"success": False, "error": result.stderr}
-            
+            if exit_code != 0:
+                logger.error(f"Failed to remove peer: {stderr}")
+                return {"success": False, "error": stderr}
+
             logger.info(f"Peer {client_name} removed successfully")
             return {"success": True, "message": "Peer removed"}
         
         except Exception as e:
             logger.error(f"Exception in remove_peer: {str(e)}")
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def generate_amnezia_backup(config_content: str, client_name: str) -> dict:
+        """Генерировать JSON бекап с поддержкой параметров AmneziaWG v2"""
+        parsed = ConfigManager.parse_wg_config(config_content)
+        if "interface" not in parsed:
+            return {}
+
+        # Извлекаем специфические параметры AmneziaWG (Junk, Magic numbers)
+        # Если их нет в конфиге, приложение будет использовать дефолтные
+        backup = {
+            "name": client_name,
+            "interface": {
+                "privateKey": parsed["interface"].get("PrivateKey", ""),
+                "address": parsed["interface"].get("Address", ""),
+                "mtu": int(parsed["interface"].get("MTU", "1280")),
+                "dns": parsed["interface"].get("DNS", "1.1.1.1").split(", "),
+                # Параметры AmneziaWG v2
+                "junkPacketCount": int(parsed["interface"].get("JunkPacketCount", "3")),
+                "junkPacketMinSize": int(parsed["interface"].get("JunkPacketMinSize", "50")),
+                "junkPacketMaxSize": int(parsed["interface"].get("JunkPacketMaxSize", "1000")),
+                "initPacketJunkSize": int(parsed["interface"].get("InitPacketJunkSize", "0")),
+                "responsePacketJunkSize": int(parsed["interface"].get("ResponsePacketJunkSize", "0")),
+                "initPacketMagicNumber": int(parsed["interface"].get("InitPacketMagicNumber", "1")),
+                "responsePacketMagicNumber": int(parsed["interface"].get("ResponsePacketMagicNumber", "2")),
+                "underloadPacketMagicNumber": int(parsed["interface"].get("UnderloadPacketMagicNumber", "3")),
+                "transportPacketMagicNumber": int(parsed["interface"].get("TransportPacketMagicNumber", "4")),
+            },
+            "peer": {
+                "publicKey": parsed.get("peer", {}).get("PublicKey", ""),
+                "endpoint": parsed.get("peer", {}).get("Endpoint", ""),
+                "allowedIPs": parsed.get("peer", {}).get("AllowedIPs", "0.0.0.0/0").split(", "),
+                "persistentKeepalive": int(parsed.get("peer", {}).get("PersistentKeepalive", "25")),
+            },
+            "createdAt": datetime.utcnow().isoformat(),
+        }
+        return backup
+

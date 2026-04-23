@@ -78,6 +78,19 @@ class DatabaseService:
             ).order_by(Config.created_at.desc())
         )
         return result.scalars().first()
+
+    @staticmethod
+    async def get_active_client_ips(session: AsyncSession) -> list[str]:
+        """Получить IP-адреса активных конфигов"""
+        result = await session.execute(
+            select(Config.client_ip).where(
+                and_(
+                    Config.is_active == True,
+                    Config.expires_at > datetime.utcnow()
+                )
+            )
+        )
+        return [row[0] for row in result.all()]
     
     @staticmethod
     async def get_config_by_id(session: AsyncSession, config_id: str) -> Config:

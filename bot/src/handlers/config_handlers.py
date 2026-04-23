@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 from aiogram import Router, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -12,6 +13,37 @@ from src.config import Config
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+
+async def get_next_available_ip(session) -> str:
+    """Найти следующий свободный IP в подсети из AWG_SUBNET."""
+    used_ips = await DatabaseService.get_active_client_ips(session)
+    subnet = ipaddress.ip_network(Config.AWG_SUBNET, strict=False)
+    server_ip = ipaddress.ip_address(Config.AWG_SUBNET.split('/')[0])
+
+    used_addresses = set()
+    for ip in used_ips:
+        ip = ip.strip()
+        if not ip:
+            continue
+        try:
+            used_addresses.add(ipaddress.ip_address(ip))
+        except ValueError:
+            # Возможно, в БД уже хранится CIDR-подсеть, игнорируем
+            if '/' in ip:
+                try:
+                    used_addresses.add(ipaddress.ip_address(ip.split('/')[0]))
+                except ValueError:
+                    continue
+            continue
+
+    for candidate in subnet.hosts():
+        if candidate == server_ip:
+            continue
+        if candidate not in used_addresses:
+            return str(candidate)
+
+    raise RuntimeError(f"Нет доступных IP-адресов в подсети {subnet}")
 
 
 async def create_and_send_config_for_user(telegram_id: int, target_message: types.Message) -> bool:
@@ -31,8 +63,8 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
                 # Удалить пира из WireGuard
                 await PeerManager.remove_peer(old_config.client_name, old_config.client_public_key)
 
-            # Найти следующий свободный IP
-            next_ip = f"10.80.0.{user.id + 10}"  # Простой алгоритм
+            # Найти следующий свободный IP в /16
+            next_ip = await get_next_available_ip(session)
 
             # Генерировать имя клиента
             client_name = f"tg_{telegram_id}_{datetime.utcnow().timestamp():.0f}"

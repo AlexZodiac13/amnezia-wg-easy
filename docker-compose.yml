@@ -27,7 +27,7 @@ services:
     environment:
       AWG_INTERFACE: awg0
       AWG_LISTEN_PORT: 5066
-      AWG_ADDRESS: 10.80.0.1/24
+      AWG_ADDRESS: 10.80.0.1/16
       AWG_MTU: 1280
       AWG_DNS: 10.80.0.1
       AWG_TABLE: off
@@ -96,7 +96,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
       AWG_INTERFACE: awg0
       AWG_LISTEN_PORT: 5066
-      AWG_SUBNET: 10.80.0.1/24
+      AWG_SUBNET: 10.80.0.1/16
       AWG_DNS: 10.80.0.1
       AWG_CONTAINER_NAME: awg-core
       SCRIPTS_DIR: /app/scripts

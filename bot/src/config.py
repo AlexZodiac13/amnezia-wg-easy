@@ -14,7 +14,7 @@ class Config:
     # AWG
     AWG_INTERFACE = os.getenv("AWG_INTERFACE", "awg0")
     AWG_LISTEN_PORT = int(os.getenv("AWG_LISTEN_PORT", "5060"))
-    AWG_SUBNET = os.getenv("AWG_SUBNET", "10.80.0.1/24")
+    AWG_SUBNET = os.getenv("AWG_SUBNET", "10.80.0.1/16")
     AWG_DNS = os.getenv("AWG_DNS", "10.80.0.1")
     AWG_CONTAINER_NAME = os.getenv("AWG_CONTAINER_NAME", "awg-core")
     

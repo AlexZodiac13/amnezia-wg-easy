@@ -23,6 +23,44 @@ UNLIMITED_RATE_MBIT="${AWG_UNLIMITED_RATE_MBIT:-1000}"
 ROOT_DEFAULT_CLASS_ID="9999"
 PUBKEY_PATTERN='^[A-Za-z0-9+/]{43}=$'
 
+next_available_ip() {
+  local subnet="10.80.0.0/16"
+  local start_ip="10.80.0.2"
+  local used_ips
+  
+  # Extract used IPs from server config
+  used_ips=$(awk '
+    /^[[:space:]]*AllowedIPs[[:space:]]*=/ {
+      split($0, parts, "=")
+      ip = parts[2]
+      gsub(/[[:space:]]+/, "", ip)
+      # Extract IP part before /
+      split(ip, ip_parts, "/")
+      print ip_parts[1]
+    }
+  ' "$SERVER_CONFIG" | sort -u)
+  
+  # Find next available IP starting from 10.80.0.2
+  local ip_num=$(echo "$start_ip" | awk -F. '{print ($1*256*256*256) + ($2*256*256) + ($3*256) + $4}')
+  local max_ip=$(echo "10.80.255.254" | awk -F. '{print ($1*256*256*256) + ($2*256*256) + ($3*256) + $4}')
+  
+  while [ $ip_num -le $max_ip ]; do
+    local candidate_ip=$(awk -v num=$ip_num 'BEGIN {
+      printf "%d.%d.%d.%d", (num/(256*256*256))%256, (num/(256*256))%256, (num/256)%256, num%256
+    }')
+    
+    if ! echo "$used_ips" | grep -q "^$candidate_ip$"; then
+      echo "$candidate_ip/32"
+      return 0
+    fi
+    
+    ip_num=$((ip_num + 1))
+  done
+  
+  echo "No available IP addresses in subnet $subnet" >&2
+  return 1
+}
+
 server_value() {
   local key="$1"
   awk -F'=' -v wanted_key="$key" '
@@ -202,7 +240,7 @@ fi
 
 CLIENT_NAME="${1:-client-$(date +%Y%m%d%H%M%S)}"
 ENDPOINT="${2:-${AWG_ENDPOINT:-change-me:5066}}"
-CLIENT_IP_CIDR="${3:-$DEFAULT_CLIENT_IP_CIDR}"
+CLIENT_IP_CIDR="${3:-$(next_available_ip)}"
 PRESHARED_KEY="${4:-}"
 CLIENT_RATE_MBIT="$(normalize_rate "${5:-}")"
 CLIENT_PERSISTENT_KEEPALIVE="${AWG_CLIENT_PERSISTENT_KEEPALIVE:-0}"

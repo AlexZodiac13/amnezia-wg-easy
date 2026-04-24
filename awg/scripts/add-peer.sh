@@ -255,8 +255,6 @@ mkdir -p "$CLIENTS_DIR"
 CLIENT_PRIVATE_KEY_FILE="$CLIENTS_DIR/${CLIENT_NAME}.privatekey"
 CLIENT_PUBLIC_KEY_FILE="$CLIENTS_DIR/${CLIENT_NAME}.publickey"
 CLIENT_CONFIG_FILE="$CLIENTS_DIR/${CLIENT_NAME}.conf"
-CLIENT_QR_FILE="$CLIENTS_DIR/${CLIENT_NAME}.png"
-CLIENT_QR_TXT_FILE="$CLIENTS_DIR/${CLIENT_NAME}_qr.txt"
 
 awg genkey | tee "$CLIENT_PRIVATE_KEY_FILE" | awg pubkey > "$CLIENT_PUBLIC_KEY_FILE"
 chmod 600 "$CLIENT_PRIVATE_KEY_FILE"
@@ -332,41 +330,8 @@ apply_peer_rate_limit "$CLIENT_IP_CIDR" "$CLIENT_RATE_MBIT"
 # Make config readable (755 dir, 644 files)
 chmod 644 "$CLIENT_CONFIG_FILE"
 
-# Generate QR codes with Python
-if command -v python3 &>/dev/null; then
-  # PNG QR code
-  python3 -c "
-import qrcode
-try:
-    with open('$CLIENT_CONFIG_FILE', 'r') as f:
-        data = f.read()
-    qr = qrcode.QRCode()
-    qr.add_data(data)
-    qr.make()
-    qr.make_image().save('$CLIENT_QR_FILE')
-except:
-    pass
-" && chmod 644 "$CLIENT_QR_FILE" 2>/dev/null || true
-  
-  # ASCII QR code
-  python3 -c "
-import qrcode
-try:
-    with open('$CLIENT_CONFIG_FILE', 'r') as f:
-        data = f.read()
-    qr = qrcode.QRCode()
-    qr.add_data(data)
-    qr.make()
-    qr.print_ascii()
-except:
-    pass
-" > "$CLIENT_QR_TXT_FILE" 2>&1 && chmod 644 "$CLIENT_QR_TXT_FILE" || true
-fi
-
 echo "Client created: $CLIENT_NAME"
 echo "Client config: $CLIENT_CONFIG_FILE"
 echo "Client private key: $CLIENT_PRIVATE_KEY_FILE"
 echo "Client public key: $CLIENT_PUBLIC_KEY_FILE"
-[[ -f "$CLIENT_QR_FILE" ]] && echo "Client QR (PNG): $CLIENT_QR_FILE"
-[[ -f "$CLIENT_QR_TXT_FILE" ]] && echo "Client QR (text): $CLIENT_QR_TXT_FILE"
 echo "Peer added: $CLIENT_PUBLIC_KEY -> $CLIENT_IP_CIDR (rate ${CLIENT_RATE_MBIT}mbit)"

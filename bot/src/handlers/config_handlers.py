@@ -1,7 +1,8 @@
 import ipaddress
 import logging
+import os
 from aiogram import Router, F, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputFile
 import uuid
 from datetime import datetime, timedelta
 
@@ -44,6 +45,16 @@ async def get_next_available_ip(session) -> str:
             return str(candidate)
 
     raise RuntimeError(f"Нет доступных IP-адресов в подсети {subnet}")
+
+
+def build_config_artifact_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Текст конфига", callback_data="send_config_text")],
+        [InlineKeyboardButton(text="Файл конфига", callback_data="send_config_file")],
+        [InlineKeyboardButton(text="JSON бекап", callback_data="send_amnezia_backup")],
+        [InlineKeyboardButton(text="📱 Инструкция для телефона", callback_data="send_setup_instruction_phone")],
+        [InlineKeyboardButton(text="💻 Инструкция для ПК", callback_data="send_setup_instruction_pc")],
+    ])
 
 
 async def create_and_send_config_for_user(telegram_id: int, target_message: types.Message) -> bool:
@@ -112,13 +123,7 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
                 rate_limit=Config.DEFAULT_RATE_LIMIT
             )
 
-            # Генерировать QR код
-            qr_bytes = ConfigManager.generate_qr_code(config_content)
-
-            # Генерировать бекап для Amnezia
-            amnezia_backup = ConfigManager.generate_amnezia_backup_full(config_content, client_name)
-
-            # Отправить результат
+            # Отправить результат с кнопками для выбора артефакта
             text = f"""
 ✅ **Конфиг успешно создан!**
 
@@ -129,52 +134,14 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
 - Срок действия: `30 дней`
 - Истекает: `{(datetime.utcnow() + timedelta(days=30)).strftime('%d.%m.%Y')}`
 
-Ниже вы получите:
-1. Текст конфига
-2. QR-код
-3. Файл конфига
-4. JSON бекап для Amnezia
-5. Инструкция по настройке
+Нажмите кнопку ниже, чтобы получить нужный артефакт.
             """
 
-            await target_message.edit_text(text, parse_mode="Markdown")
-
-            # Отправить текст конфига
-            await target_message.answer(f"```\n{config_content}\n```", parse_mode="Markdown")
-
-            # Отправить QR-код
-            if qr_bytes:
-                await target_message.answer_photo(
-                    photo=types.BufferedInputFile(file=qr_bytes, filename="qr_code.png"),
-                    caption="📱 QR-код для сканирования"
-                )
-
-            # Отправить файл конфига
-            config_file = types.BufferedInputFile(
-                file=config_content.encode(),
-                filename=f"{client_name}.conf"
+            await target_message.edit_text(
+                text,
+                parse_mode="Markdown",
+                reply_markup=build_config_artifact_keyboard()
             )
-            await target_message.answer_document(
-                document=config_file,
-                caption="📄 Файл конфига WireGuard"
-            )
-
-            # Отправить JSON бекап
-            import json
-            backup_json = json.dumps(amnezia_backup, indent=2)
-            backup_file = types.BufferedInputFile(
-                file=backup_json.encode(),
-                filename=f"{client_name}_amnezia_backup.backup"
-            )
-            await target_message.answer_document(
-                document=backup_file,
-                caption="💾 Бекап для приложения Amnezia"
-            )
-
-            # Отправить инструкцию
-            instruction = ConfigManager.create_setup_instruction()
-            await target_message.answer(instruction, parse_mode="Markdown")
-
             return True
 
         except Exception as e:
@@ -210,15 +177,6 @@ async def show_current_config(query: types.CallbackQuery):
             await query.answer()
             return
         
-        # Генерировать QR код
-        qr_bytes = ConfigManager.generate_qr_code(config.wg_config_content)
-        
-        # Генерировать бекап для Amnezia
-        amnezia_backup = ConfigManager.generate_amnezia_backup_full(
-            config.wg_config_content,
-            config.client_name
-        )
-        
         text = f"""
 📋 **Ваш текущий конфиг:**
 
@@ -229,19 +187,46 @@ async def show_current_config(query: types.CallbackQuery):
 - Истекает: `{config.expires_at.strftime('%d.%m.%Y')}`
         """
         
-        await query.message.edit_text(text, parse_mode="Markdown")
-        
-        # Отправить текст конфига
+        await query.message.edit_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=build_config_artifact_keyboard()
+        )
+        await query.answer()
+
+
+@router.callback_query(F.data == "send_config_text")
+async def send_config_text(query: types.CallbackQuery):
+    telegram_id = query.from_user.id
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_active_config(session, user.id)
+        if not config:
+            await query.answer("❌ У вас нет активного конфига")
+            return
+
         await query.message.answer(f"```\n{config.wg_config_content}\n```", parse_mode="Markdown")
-        
-        # Отправить QR-код
-        if qr_bytes:
-            await query.message.answer_photo(
-                photo=types.BufferedInputFile(file=qr_bytes, filename="qr_code.png"),
-                caption="📱 QR-код для сканирования"
-            )
-        
-        # Отправить файл конфига
+        await query.answer("✅ Текст конфига отправлен")
+
+
+@router.callback_query(F.data == "send_config_file")
+async def send_config_file(query: types.CallbackQuery):
+    telegram_id = query.from_user.id
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_active_config(session, user.id)
+        if not config:
+            await query.answer("❌ У вас нет активного конфига")
+            return
+
         config_file = types.BufferedInputFile(
             file=config.wg_config_content.encode(),
             filename=f"{config.client_name}.conf"
@@ -250,8 +235,27 @@ async def show_current_config(query: types.CallbackQuery):
             document=config_file,
             caption="📄 Файл конфига WireGuard"
         )
-        
-        # Отправить JSON бекап
+        await query.answer("✅ Файл конфига отправлен")
+
+
+@router.callback_query(F.data == "send_amnezia_backup")
+async def send_amnezia_backup(query: types.CallbackQuery):
+    telegram_id = query.from_user.id
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_active_config(session, user.id)
+        if not config:
+            await query.answer("❌ У вас нет активного конфига")
+            return
+
+        amnezia_backup = ConfigManager.generate_amnezia_backup_full(
+            config.wg_config_content,
+            config.client_name
+        )
         import json
         backup_json = json.dumps(amnezia_backup, indent=2)
         backup_file = types.BufferedInputFile(
@@ -262,9 +266,29 @@ async def show_current_config(query: types.CallbackQuery):
             document=backup_file,
             caption="💾 Бекап для приложения Amnezia"
         )
-        
-        # Отправить инструкцию
-        instruction = ConfigManager.create_setup_instruction()
-        await query.message.answer(instruction, parse_mode="Markdown")
-        
-        await query.answer()
+        await query.answer("✅ Бекап отправлен")
+
+
+@router.callback_query(F.data == "send_setup_instruction_phone")
+async def send_setup_instruction_phone(query: types.CallbackQuery):
+    instruction_text = ConfigManager.create_setup_instruction("phone")
+    
+    # Отправить текст инструкции
+    await query.message.answer(instruction_text, parse_mode="Markdown")
+    
+    await query.answer("✅ Инструкция для телефона отправлена")
+
+@router.callback_query(F.data == "send_setup_instruction_pc")
+async def send_setup_instruction_pc(query: types.CallbackQuery):
+    instruction_text = ConfigManager.create_setup_instruction("pc")
+    
+    # Отправить текст инструкции
+    await query.message.answer(instruction_text, parse_mode="Markdown")
+    
+    await query.answer("✅ Инструкция для ПК отправлена")
+                photo = InputFile(img_path)
+                await query.message.answer_photo(photo)
+            except Exception as e:
+                logging.error(f"Failed to send image {img_path}: {e}")
+    
+    await query.answer("✅ Инструкция для ПК отправлена")

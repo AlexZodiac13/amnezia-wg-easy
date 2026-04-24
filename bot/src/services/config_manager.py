@@ -1,7 +1,4 @@
-import qrcode
-from io import BytesIO
 import json
-import base64
 from datetime import datetime, timedelta
 import logging
 import os
@@ -11,7 +8,7 @@ logger = logging.getLogger(__name__)
 class ConfigManager:
     """Управление конфигами клиентов"""
     
-    BACKUP_TEMPLATE_PATH = os.getenv("AMNEZIA_BACKUP_TEMPLATE_PATH", "/app/AmneziaVPN.backup")
+    BACKUP_TEMPLATE_PATH = os.getenv("AMNEZIA_BACKUP_TEMPLATE_PATH", "/app/instructions/AmneziaVPN.backup")
 
     
     @staticmethod
@@ -34,28 +31,6 @@ class ConfigManager:
                 data[current_section][key.strip()] = value.strip()
         
         return data
-    
-    @staticmethod
-    def generate_qr_code(config_content: str) -> bytes:
-        """Сгенерировать QR-код для конфига"""
-        try:
-            qr = qrcode.QRCode(
-                version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=10,
-                border=4,
-            )
-            qr.add_data(config_content)
-            qr.make(fit=True)
-            
-            img = qr.make_image(fill_color="black", back_color="white")
-            buf = BytesIO()
-            img.save(buf, format='PNG')
-            buf.seek(0)
-            return buf.getvalue()
-        except Exception as e:
-            logger.error(f"Failed to generate QR code: {str(e)}")
-            return None
     
     @staticmethod
     def generate_amnezia_backup(config_content: str, client_name: str) -> dict:
@@ -232,32 +207,30 @@ class ConfigManager:
             return {}
     
     @staticmethod
-    def create_setup_instruction(config_format: str = "android") -> str:
-
-        """Создать инструкцию по настройке"""
-        instruction_ru = """
-📱 **Инструкция по настройке Amnezia VPN**
-
-**Для Android:**
-1. Загрузите приложение Amnezia VPN из Google Play
-2. Нажмите кнопку "+" для добавления нового сервера
-3. Выберите опцию "Импорт из QR-кода" или загрузите файл конфига
-4. Скопируйте текст конфига в буфер обмена и нажмите "Вставить"
-5. Убедитесь, что выборочный обход включен
-6. Нажмите "Подключиться"
-
-**Для iOS:**
-1. Загрузите приложение Amnezia VPN из App Store
-2. Нажмите кнопку "+" для добавления конфига
-3. Отсканируйте QR-код или импортируйте файл
-4. Проверьте настройки и подключитесь
-
-**Для Windows/macOS:**
-1. Скачайте приложение Amnezia
-2. Откройте приложение и импортируйте конфиг через QR-код или файл
-3. Выберите правильную конфигурацию и подключитесь
-
-❗ **Важно:** Ваш конфиг действителен 30 дней с момента создания.
-Вы получите уведомление за 3 дня до истечения срока действия.
+    def create_setup_instruction(device_type: str = "phone") -> str:
+        """Создать инструкцию по настройке для указанного типа устройства
+        
+        Возвращает отформатированный текст инструкции
         """
-        return instruction_ru
+        base_path = "/app/instructions"  # Путь к папке с инструкциями
+        
+        if device_type == "phone":
+            file_path = f"{base_path}/phone.md"
+        elif device_type == "pc":
+            file_path = f"{base_path}/pc.md"
+        else:
+            return "❌ Неизвестный тип устройства"
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except FileNotFoundError:
+            return f"❌ Файл инструкции для {device_type} не найден"
+        
+        # Добавить заголовок
+        if device_type == "phone":
+            header = "📱 **Инструкция по настройке Amnezia VPN для телефона**\n\n"
+        else:
+            header = "💻 **Инструкция по настройке Amnezia VPN для ПК**\n\n"
+        
+        return header + content

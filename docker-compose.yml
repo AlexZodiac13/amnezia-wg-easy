@@ -104,12 +104,12 @@ services:
       DEFAULT_RATE_LIMIT: ${DEFAULT_RATE_LIMIT:-15}
       EXPIRATION_DAYS: ${EXPIRATION_DAYS:-30}
       NOTIFICATION_DAYS: ${NOTIFICATION_DAYS:-3}
-      AMNEZIA_BACKUP_TEMPLATE_PATH: /app/AmneziaVPN.backup
+      AMNEZIA_BACKUP_TEMPLATE_PATH: /app/instructions/AmneziaVPN.backup
     volumes:
       - ./bot/src:/app/src
       - ./awg/scripts:/app/scripts:ro
       - ./awg/data:/etc/amnezia/amneziawg
-      - ./AmneziaVPN.backup:/app/AmneziaVPN.backup:ro
+      - /home/docker/amnezia-wg-easy/instructions:/app/instructions:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - awg-net

@@ -1,0 +1,79 @@
+{
+    "AppPlatform": "Android",
+    "Conf/ExceptApps": [
+    ],
+    "Conf/ForwardApps": [
+        {
+            "appName": "4PDA",
+            "appPath": "",
+            "packageName": "ru.fourpda.client"
+        },
+        {
+            "appName": "YouTube",
+            "appPath": "",
+            "packageName": "anddea.youtube"
+        },
+        {
+            "appName": "Speedtest",
+            "appPath": "",
+            "packageName": "org.zwanoo.android.speedtest"
+        },
+        {
+            "appName": "Google Play",
+            "appPath": "",
+            "packageName": "com.android.vending"
+        },
+        {
+            "appName": "Duolingo",
+            "appPath": "",
+            "packageName": "com.duolingo"
+        },
+        {
+            "appName": "Instagram",
+            "appPath": "",
+            "packageName": "com.instagram.android"
+        },
+        {
+            "appName": "WhatsApp",
+            "appPath": "",
+            "packageName": "com.whatsapp"
+        },
+        {
+            "appName": "Telegram",
+            "appPath": "",
+            "packageName": "org.telegram.messenger"
+        },
+        {
+            "appName": "YTDLnis",
+            "appPath": "",
+            "packageName": "com.deniscerri.ytdl"
+        },
+        {
+            "appName": "Copilot",
+            "appPath": "",
+            "packageName": "com.microsoft.copilot"
+        },
+        {
+            "appName": "YouTube",
+            "appPath": "",
+            "packageName": "com.google.android.youtube"
+        },
+        {
+            "appName": "YouTube ReVanced",
+            "appPath": "",
+            "packageName": "app.revanced.android.youtube"
+        }
+    ],
+    "Conf/appLanguage": "ru_RU",
+    "Conf/appsRouteMode": 1,
+    "Conf/appsSplitTunnelingEnabled": true,
+    "Conf/autoStart": false,
+    "Conf/devGatewayEnv": false,
+    "Conf/encrypted": true,
+    "Conf/killSwitchEnabled": true,
+    "Conf/routeMode": 1,
+    "Conf/strictKillSwitchEnabled": false,
+    "Conf/useAmneziaDns": true,
+    "Servers/defaultServerIndex": 0,
+    "Servers/serversList": "[\n    {\n        \"containers\": [\n            {\n                \"awg\": {\n                    \"isThirdPartyConfig\": true,\n                    \"last_config\": \"{\\n    \\\"H1\\\": \\\"471800590-471800690\\\",\\n    \\\"H2\\\": \\\"1246894907-1246895000\\\",\\n    \\\"H3\\\": \\\"923637689-923637780\\\",\\n    \\\"H4\\\": \\\"1769581055-1869581055\\\",\\n    \\\"I1\\\": \\\"<b 0xc700000001><rc 8><t><r 100>\\\",\\n    \\\"I2\\\": \\\"<b 0xf6ab3267fa><t><rc 20><r 80>\\\",\\n    \\\"Jc\\\": \\\"6\\\",\\n    \\\"Jmax\\\": \\\"1000\\\",\\n    \\\"Jmin\\\": \\\"50\\\",\\n    \\\"S1\\\": \\\"68\\\",\\n    \\\"S2\\\": \\\"149\\\",\\n    \\\"S3\\\": \\\"64\\\",\\n    \\\"S4\\\": \\\"16\\\",\\n    \\\"allowed_ips\\\": [\\n        \\\"0.0.0.0/0\\\",\\n        \\\"::/0\\\"\\n    ],\\n    \\\"client_ip\\\": \\\"10.80.0.2/32\\\",\\n    \\\"client_priv_key\\\": \\\"SC4cpHvZt/GnC2ydHizFAMWLqTfmVdqjciONhDVVm1Y=\\\",\\n    \\\"config\\\": \\\"[Interface]\\\\nPrivateKey = SC4cpHvZt/GnC2ydHizFAMWLqTfmVdqjciONhDVVm1Y=\\\\nAddress = 10.80.0.2/32\\\\nMTU = 1280\\\\nDNS = 10.80.0.1\\\\nJc = 6\\\\nJmin = 50\\\\nJmax = 1000\\\\nS1 = 68\\\\nS2 = 149\\\\nS3 = 64\\\\nS4 = 16\\\\nH1 = 471800590-471800690\\\\nH2 = 1246894907-1246895000\\\\nH3 = 923637689-923637780\\\\nH4 = 1769581055-1869581055\\\\nI1 = <b 0xc700000001><rc 8><t><r 100>\\\\nI2 = <b 0xf6ab3267fa><t><rc 20><r 80>\\\\n\\\\n[Peer]\\\\nPublicKey = 7e46h3wO7Gdhr1IanbRMSyoeloH5aWYRQa5bVWiPUV8=\\\\nPresharedKey = Op3P/C0Whx2SaOcYzJnUTSktE8KAHRAlZHE9rn4j4Kc=\\\\nEndpoint = wg.owgrant.com:5066\\\\nAllowedIPs = 0.0.0.0/0, ::/0\\\\nPersistentKeepalive = 25\\\\n\\\\n# Rate limit (in Mbit/s) - do not edit\\\\n# Rate = 15\\\",\\n    \\\"hostName\\\": \\\"wg.owgrant.com\\\",\\n    \\\"mtu\\\": \\\"1280\\\",\\n    \\\"persistent_keep_alive\\\": \\\"25\\\",\\n    \\\"port\\\": 5066,\\n    \\\"psk_key\\\": \\\"Op3P/C0Whx2SaOcYzJnUTSktE8KAHRAlZHE9rn4j4Kc=\\\",\\n    \\\"server_pub_key\\\": \\\"7e46h3wO7Gdhr1IanbRMSyoeloH5aWYRQa5bVWiPUV8=\\\"\\n}\\n\",\n                    \"port\": \"5066\",\n                    \"protocol_version\": \"2\",\n                    \"transport_proto\": \"udp\"\n                },\n                \"container\": \"amnezia-awg\"\n            }\n        ],\n        \"defaultContainer\": \"amnezia-awg\",\n        \"description\": \"Сервер 1\",\n        \"hostName\": \"wg.owgrant.com\"\n    }\n]\n"
+}

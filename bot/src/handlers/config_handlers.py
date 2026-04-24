@@ -116,7 +116,7 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
             qr_bytes = ConfigManager.generate_qr_code(config_content)
 
             # Генерировать бекап для Amnezia
-            amnezia_backup = ConfigManager.generate_amnezia_backup(config_content, client_name)
+            amnezia_backup = ConfigManager.generate_amnezia_backup_full(config_content, client_name)
 
             # Отправить результат
             text = f"""
@@ -164,7 +164,7 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
             backup_json = json.dumps(amnezia_backup, indent=2)
             backup_file = types.BufferedInputFile(
                 file=backup_json.encode(),
-                filename=f"{client_name}_amnezia_backup.json"
+                filename=f"{client_name}_amnezia_backup.backup"
             )
             await target_message.answer_document(
                 document=backup_file,
@@ -214,7 +214,7 @@ async def show_current_config(query: types.CallbackQuery):
         qr_bytes = ConfigManager.generate_qr_code(config.wg_config_content)
         
         # Генерировать бекап для Amnezia
-        amnezia_backup = ConfigManager.generate_amnezia_backup(
+        amnezia_backup = ConfigManager.generate_amnezia_backup_full(
             config.wg_config_content,
             config.client_name
         )
@@ -256,7 +256,7 @@ async def show_current_config(query: types.CallbackQuery):
         backup_json = json.dumps(amnezia_backup, indent=2)
         backup_file = types.BufferedInputFile(
             file=backup_json.encode(),
-            filename=f"{config.client_name}_amnezia_backup.json"
+            filename=f"{config.client_name}_amnezia_backup.backup"
         )
         await query.message.answer_document(
             document=backup_file,

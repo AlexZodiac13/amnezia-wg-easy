@@ -135,6 +135,7 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
 - Истекает: `{(datetime.utcnow() + timedelta(days=30)).strftime('%d.%m.%Y')}`
 
 Нажмите кнопку ниже, чтобы получить нужный артефакт.
+Рекомендуем воспользоваться JSON бекапом для импорта в приложение Amnezia, так как он содержит все необходимые данные и уже настроен для удобного использования Телеграмом, Ютубом, Инстаграмом и Вотсапом.
             """
 
             await target_message.edit_text(

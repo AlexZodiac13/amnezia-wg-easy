@@ -121,8 +121,6 @@ async def support(message: types.Message):
 3. Переподключитесь к VPN
 4. Обновите приложение Amnezia
 
-Если проблема остаётся, напишите в поддержку:
-📧 support@example.com
     """
     await safe_answer(message, support_text, parse_mode="Markdown")
 

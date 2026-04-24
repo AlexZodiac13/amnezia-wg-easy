@@ -281,14 +281,5 @@ async def send_setup_instruction_phone(query: types.CallbackQuery):
 @router.callback_query(F.data == "send_setup_instruction_pc")
 async def send_setup_instruction_pc(query: types.CallbackQuery):
     instruction_text = ConfigManager.create_setup_instruction("pc")
-    
-    # Отправить текст инструкции
     await query.message.answer(instruction_text, parse_mode="Markdown")
-    
-    await query.answer("✅ Инструкция для ПК отправлена")
-                photo = InputFile(img_path)
-                await query.message.answer_photo(photo)
-            except Exception as e:
-                logging.error(f"Failed to send image {img_path}: {e}")
-    
     await query.answer("✅ Инструкция для ПК отправлена")

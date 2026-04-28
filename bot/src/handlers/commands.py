@@ -99,7 +99,6 @@ Telegram ID: `{telegram_id}`
             info_text += f"""
 - Имя: `{config.client_name}`
 - IP адрес: `{config.client_ip}`
-- Скорость: `{config.rate_limit} Mbit/s`
 - Срок действия: `{days_left} дней`
 - Истекает: `{config.expires_at.strftime('%d.%m.%Y')}`
 """

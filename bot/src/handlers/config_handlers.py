@@ -49,9 +49,9 @@ async def get_next_available_ip(session) -> str:
 
 def build_config_artifact_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="JSON бекап (рекомендуется)", callback_data="send_amnezia_backup")],
         [InlineKeyboardButton(text="Текст конфига", callback_data="send_config_text")],
         [InlineKeyboardButton(text="Файл конфига", callback_data="send_config_file")],
-        [InlineKeyboardButton(text="JSON бекап", callback_data="send_amnezia_backup")],
         [InlineKeyboardButton(text="📱 Инструкция для телефона", callback_data="send_setup_instruction_phone")],
         [InlineKeyboardButton(text="💻 Инструкция для ПК", callback_data="send_setup_instruction_pc")],
     ])
@@ -130,7 +130,6 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
 📝 **Информация о конфиге:**
 - Имя: `{client_name}`
 - IP адрес: `{next_ip}`
-- Скорость: `{Config.DEFAULT_RATE_LIMIT} Mbit/s`
 - Срок действия: `30 дней`
 - Истекает: `{(datetime.utcnow() + timedelta(days=30)).strftime('%d.%m.%Y')}`
 
@@ -183,7 +182,6 @@ async def show_current_config(query: types.CallbackQuery):
 
 - Имя: `{config.client_name}`
 - IP адрес: `{config.client_ip}`
-- Скорость: `{config.rate_limit} Mbit/s`
 - Срок действия: `{config.days_until_expiration()} дней`
 - Истекает: `{config.expires_at.strftime('%d.%m.%Y')}`
         """

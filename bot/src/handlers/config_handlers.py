@@ -80,11 +80,14 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
             # Генерировать имя клиента
             client_name = f"tg_{telegram_id}_{datetime.utcnow().timestamp():.0f}"
 
+            admin_rate_limit = Config.ADMIN_RATE_LIMIT if user.is_admin else Config.DEFAULT_RATE_LIMIT
+            admin_expiration_days = Config.ADMIN_EXPIRATION_DAYS if user.is_admin else Config.EXPIRATION_DAYS
+
             # Добавить пира
             peer_result = await PeerManager.add_peer(
                 client_name=client_name,
                 client_ip=next_ip,
-                rate_limit=Config.DEFAULT_RATE_LIMIT
+                rate_limit=admin_rate_limit
             )
 
             if not peer_result["success"]:
@@ -120,18 +123,21 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
                 client_preshared_key=client_preshared_key,
                 client_ip=next_ip,
                 wg_config_content=config_content,
-                rate_limit=Config.DEFAULT_RATE_LIMIT
+                rate_limit=admin_rate_limit,
+                expires_at=datetime.utcnow() + timedelta(days=admin_expiration_days)
             )
 
             # Отправить результат с кнопками для выбора артефакта
+            expiration_label = "Неограничено" if user.is_admin else f"{Config.EXPIRATION_DAYS} дней"
+            expires_at_label = "Неограничено" if user.is_admin else f"{(datetime.utcnow() + timedelta(days=Config.EXPIRATION_DAYS)).strftime('%d.%m.%Y') }"
             text = f"""
 ✅ **Конфиг успешно создан!**
 
 📝 **Информация о конфиге:**
 - Имя: `{client_name}`
 - IP адрес: `{next_ip}`
-- Срок действия: `30 дней`
-- Истекает: `{(datetime.utcnow() + timedelta(days=30)).strftime('%d.%m.%Y')}`
+- Срок действия: `{expiration_label}`
+- Истекает: `{expires_at_label}`
 
 Нажмите кнопку ниже, чтобы получить нужный артефакт.
 Рекомендуем воспользоваться JSON бекапом для импорта в приложение Amnezia, так как он содержит все необходимые данные и уже настроен для удобного использования Телеграмом, Ютубом, Инстаграмом и Вотсапом.
@@ -177,13 +183,20 @@ async def show_current_config(query: types.CallbackQuery):
             await query.answer()
             return
         
+        if user.is_admin:
+            expiration_label = "Неограничено"
+            expires_at_label = "Неограничено"
+        else:
+            expiration_label = f"{config.days_until_expiration()} дней"
+            expires_at_label = config.expires_at.strftime('%d.%m.%Y')
+
         text = f"""
 📋 **Ваш текущий конфиг:**
 
 - Имя: `{config.client_name}`
 - IP адрес: `{config.client_ip}`
-- Срок действия: `{config.days_until_expiration()} дней`
-- Истекает: `{config.expires_at.strftime('%d.%m.%Y')}`
+- Срок действия: `{expiration_label}`
+- Истекает: `{expires_at_label}`
         """
         
         await query.message.edit_text(

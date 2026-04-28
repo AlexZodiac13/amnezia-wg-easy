@@ -57,7 +57,10 @@ async def start(message: types.Message):
     async with db.async_session() as session:
         # Получить или создать пользователя
         user = await DatabaseService.get_or_create_user(session, telegram_id, username)
-        
+        if user is None:
+            logger.error("get_or_create_user returned None for telegram_id %s", telegram_id)
+            user = await DatabaseService.create_user(session, telegram_id, username)
+
         welcome_text = f"""
 🔐 Добро пожаловать в Amnezia VPN Bot!
 
@@ -95,12 +98,18 @@ Telegram ID: `{telegram_id}`
 """
         
         if config:
-            days_left = config.days_until_expiration()
+            if user.is_admin:
+                expiration_label = "Неограничено"
+                expires_at_label = "Неограничено"
+            else:
+                expiration_label = f"{config.days_until_expiration()} дней"
+                expires_at_label = config.expires_at.strftime('%d.%m.%Y')
+
             info_text += f"""
 - Имя: `{config.client_name}`
 - IP адрес: `{config.client_ip}`
-- Срок действия: `{days_left} дней`
-- Истекает: `{config.expires_at.strftime('%d.%m.%Y')}`
+- Срок действия: `{expiration_label}`
+- Истекает: `{expires_at_label}`
 """
         else:
             info_text += "\nНет активной конфигурации. Используйте кнопку '📝 Получить конфиг'"
@@ -137,8 +146,8 @@ async def get_config(message: types.Message):
         # Проверить, есть ли уже активный конфиг
         active_config = await DatabaseService.get_active_config(session, user.id)
         
-        if active_config and not active_config.is_expired():
-            # Если есть активный, предложить новый
+        if active_config and not active_config.is_expired() and not user.is_admin:
+            # Если есть активный, предложить новый только обычному пользователю
             await safe_answer(
                 message,
                 "📋 У вас уже есть активный конфиг. Создать новый?",

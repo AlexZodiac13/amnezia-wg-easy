@@ -13,6 +13,7 @@ class DatabaseService:
     @staticmethod
     async def create_user(session: AsyncSession, telegram_id: int, username: str = None, is_admin: bool = False) -> User:
         """Создать нового пользователя"""
+        is_admin = is_admin or telegram_id == AppConfig.ADMIN_TELEGRAM_ID
         user = User(telegram_id=telegram_id, username=username, is_admin=is_admin)
         session.add(user)
         await session.commit()
@@ -24,15 +25,21 @@ class DatabaseService:
         """Получить пользователя по Telegram ID"""
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         return result.scalar_one_or_none()
-    
+
     @staticmethod
     async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str = None) -> User:
         """Получить или создать пользователя"""
         user = await DatabaseService.get_user(session, telegram_id)
-        if not user:
-            user = await DatabaseService.create_user(session, telegram_id, username)
+        if user is None:
+            return await DatabaseService.create_user(session, telegram_id, username)
+
+        if telegram_id == AppConfig.ADMIN_TELEGRAM_ID and not user.is_admin:
+            user.is_admin = True
+            await session.commit()
+            await session.refresh(user)
+
         return user
-    
+
     @staticmethod
     async def create_config(
         session: AsyncSession,
@@ -44,10 +51,12 @@ class DatabaseService:
         client_preshared_key: str,
         client_ip: str,
         wg_config_content: str,
-        rate_limit: int = 15
+        rate_limit: int = 15,
+        expires_at: datetime | None = None
     ) -> Config:
         """Создать новый конфиг"""
-        expires_at = datetime.utcnow() + timedelta(days=AppConfig.EXPIRATION_DAYS)
+        if expires_at is None:
+            expires_at = datetime.utcnow() + timedelta(days=AppConfig.EXPIRATION_DAYS)
         config = Config(
             user_id=user_id,
             config_id=config_id,

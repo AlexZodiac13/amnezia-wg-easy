@@ -192,6 +192,16 @@ ensure_htb_root() {
   tc filter add dev "$device" parent 1: protocol ip prio 1 handle "$UNLIMITED_RATE_MBIT" fw flowid "1:${UNLIMITED_RATE_MBIT}" 2>/dev/null || true
 }
 
+cleanup_peer_rate_limit() {
+  local client_ip="$1"
+  local ext_if="$2"
+
+  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$DEFAULT_RATE_MBIT" 2>/dev/null || true
+  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$WHITELIST_RATE_MBIT" 2>/dev/null || true
+  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$UNLIMITED_RATE_MBIT" 2>/dev/null || true
+  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark 2>/dev/null || true
+}
+
 apply_peer_rate_limit() {
   local client_ip_cidr="$1"
   local rate_mbit="$2"
@@ -204,11 +214,10 @@ apply_peer_rate_limit() {
   ensure_htb_root "$IFACE"
   ensure_htb_root "$ext_if"
 
-  iptables -t mangle -C PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit" 2>/dev/null || \
-    iptables -t mangle -I PREROUTING 1 -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit"
+  cleanup_peer_rate_limit "$client_ip" "$ext_if"
 
-  iptables -t mangle -C PREROUTING -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark 2>/dev/null || \
-    iptables -t mangle -I PREROUTING 2 -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark
+  iptables -t mangle -I PREROUTING 1 -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit"
+  iptables -t mangle -I PREROUTING 2 -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark
 
   iptables -t mangle -C PREROUTING -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark 2>/dev/null || \
     iptables -t mangle -I PREROUTING 1 -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark

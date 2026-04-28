@@ -24,7 +24,9 @@ class Config:
     
     # Rate limits
     DEFAULT_RATE_LIMIT = int(os.getenv("DEFAULT_RATE_LIMIT", "15"))
+    ADMIN_RATE_LIMIT = int(os.getenv("ADMIN_RATE_LIMIT", "0"))
     
     # Expiration
     EXPIRATION_DAYS = int(os.getenv("EXPIRATION_DAYS", "30"))
+    ADMIN_EXPIRATION_DAYS = int(os.getenv("ADMIN_EXPIRATION_DAYS", "36500"))
     NOTIFICATION_DAYS = int(os.getenv("NOTIFICATION_DAYS", "3"))

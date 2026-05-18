@@ -132,6 +132,7 @@ async def support(message: types.Message):
     """
     await safe_answer(message, support_text, parse_mode="Markdown")
 
+@router.message(Command("config"))
 @router.message(F.text == "📝 Получить конфиг")
 async def get_config(message: types.Message):
     """Получить конфиг"""
@@ -163,6 +164,25 @@ async def get_config(message: types.Message):
             status_message = await safe_answer(message, "⏳ Создаю конфиг... Это может занять несколько секунд...")
             if status_message:
                 await create_and_send_config_for_user(telegram_id, status_message)
+
+@router.message(Command("help"))
+async def help_command(message: types.Message):
+    """Команда /help"""
+    help_text = """
+🆘 **Справка по Amnezia VPN Bot**
+
+Доступные команды:
+- /start — начать работу и показать меню
+- /config — получить новый VPN конфиг
+- /info — информация о текущем аккаунте
+- /help — справка
+
+Также можете использовать кнопки:
+- 📝 Получить конфиг
+- ℹ️ Информация
+- 🆘 Поддержка
+"""
+    await safe_answer(message, help_text, parse_mode="Markdown")
 
 @router.message(F.text == "👥 Количество пользователей")
 async def user_count(message: types.Message):

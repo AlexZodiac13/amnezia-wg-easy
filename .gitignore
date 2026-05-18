@@ -28,3 +28,7 @@ logs/
 # Temporary files
 *.tmp
 temp/
+
+
+awg/data/*
+bot/data/*

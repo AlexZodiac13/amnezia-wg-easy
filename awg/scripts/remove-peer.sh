@@ -8,6 +8,7 @@ fi
 
 IFACE="$1"
 CLIENT_PUBLIC_KEY="$2"
+CLIENTS_DIR="/etc/amnezia/amneziawg/clients"
 SERVER_CONFIG="/etc/amnezia/amneziawg/${IFACE}.conf"
 CLIENT_IP=""
 
@@ -87,5 +88,26 @@ if [[ -n "$CLIENT_IP" ]]; then
   iptables -t mangle -D PREROUTING -i "$IFACE" -s "$CLIENT_IP_ADDR" -j CONNMARK --save-mark 2>/dev/null || true
 fi
 
+delete_client_files() {
+  local peer_public_key="$1"
+  local found=false
+
+  shopt -s nullglob
+  for pk_file in "$CLIENTS_DIR"/*.publickey; do
+    if [[ -f "$pk_file" && "$(cat "$pk_file")" == "$peer_public_key" ]]; then
+      local base="${pk_file%.publickey}"
+      rm -f "${base}.privatekey" "${base}.publickey" "${base}.conf" "${base}.png" "${base}_qr.txt"
+      found=true
+      break
+    fi
+  done
+  shopt -u nullglob
+
+  if [[ "$found" == false ]]; then
+    echo "Warning: client files for public key $peer_public_key not found" >&2
+  fi
+}
+
 awg set "$IFACE" peer "$CLIENT_PUBLIC_KEY" remove
+delete_client_files "$CLIENT_PUBLIC_KEY"
 echo "Peer removed: $CLIENT_PUBLIC_KEY"

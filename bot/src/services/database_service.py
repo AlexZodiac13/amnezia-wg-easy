@@ -89,6 +89,14 @@ class DatabaseService:
         return result.scalars().first()
 
     @staticmethod
+    async def get_user_configs(session: AsyncSession, user_id: int) -> list[Config]:
+        """Получить все конфиги пользователя"""
+        result = await session.execute(
+            select(Config).where(Config.user_id == user_id).order_by(Config.created_at.desc())
+        )
+        return result.scalars().all()
+
+    @staticmethod
     async def get_active_client_ips(session: AsyncSession) -> list[str]:
         """Получить IP-адреса активных конфигов"""
         result = await session.execute(
@@ -114,7 +122,15 @@ class DatabaseService:
         if config:
             config.is_active = False
             await session.commit()
-    
+
+    @staticmethod
+    async def delete_config(session: AsyncSession, config_id: str):
+        """Удалить конфиг"""
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if config:
+            await session.delete(config)
+            await session.commit()
+
     @staticmethod
     async def get_expiring_configs(session: AsyncSession, days: int = 3) -> list:
         """Получить конфиги, срок которых заканчивается через N дней"""

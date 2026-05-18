@@ -1,6 +1,7 @@
 import ipaddress
 import logging
 import os
+import re
 from aiogram import Router, F, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputFile
 import uuid
@@ -47,7 +48,16 @@ async def get_next_available_ip(session) -> str:
     raise RuntimeError(f"Нет доступных IP-адресов в подсети {subnet}")
 
 
-def build_config_artifact_keyboard() -> InlineKeyboardMarkup:
+def build_config_artifact_keyboard(config_id: str | None = None) -> InlineKeyboardMarkup:
+    if config_id:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="JSON бекап (рекомендуется)", callback_data=f"sab:{config_id}")],
+            [InlineKeyboardButton(text="Текст конфига", callback_data=f"sct:{config_id}")],
+            [InlineKeyboardButton(text="Файл конфига", callback_data=f"scf:{config_id}")],
+            [InlineKeyboardButton(text="📱 Инструкция для телефона", callback_data=f"sp:{config_id}")],
+            [InlineKeyboardButton(text="💻 Инструкция для ПК", callback_data=f"pc:{config_id}")],
+        ])
+
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="JSON бекап (рекомендуется)", callback_data="send_amnezia_backup")],
         [InlineKeyboardButton(text="Текст конфига", callback_data="send_config_text")],
@@ -57,7 +67,16 @@ def build_config_artifact_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-async def create_and_send_config_for_user(telegram_id: int, target_message: types.Message) -> bool:
+def normalize_client_name(raw_name: str) -> str:
+    clean_name = re.sub(r'[^A-Za-z0-9_.-]+', '_', raw_name.strip())
+    clean_name = clean_name.strip('_.-')
+    return clean_name[:50] if clean_name else ''
+
+async def create_and_send_config_for_user(
+    telegram_id: int,
+    target_message: types.Message,
+    client_name: str | None = None
+) -> bool:
     """Создать новый конфиг для пользователя и отправить все артефакты в чат."""
     async with db.async_session() as session:
         user = await DatabaseService.get_user(session, telegram_id)
@@ -67,18 +86,33 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
             return False
 
         try:
-            # Деактивировать старый конфиг
-            old_config = await DatabaseService.get_active_config(session, user.id)
-            if old_config:
-                await DatabaseService.deactivate_config(session, old_config.config_id)
-                # Удалить пира из WireGuard
-                await PeerManager.remove_peer(old_config.client_name, old_config.client_public_key)
+            # Для обычного пользователя деактивируем предыдущий активный конфиг.
+            # Администратор может иметь несколько активных конфигов.
+            if not user.is_admin:
+                old_config = await DatabaseService.get_active_config(session, user.id)
+                if old_config:
+                    await DatabaseService.deactivate_config(session, old_config.config_id)
+                    # Удалить пира из WireGuard
+                    await PeerManager.remove_peer(old_config.client_name, old_config.client_public_key)
 
             # Найти следующий свободный IP в /16
             next_ip = await get_next_available_ip(session)
 
-            # Генерировать имя клиента
-            client_name = f"tg_{telegram_id}_{datetime.utcnow().timestamp():.0f}"
+            # Генерировать имя клиента или использовать имя администратора
+            if client_name:
+                client_name = normalize_client_name(client_name)
+                if not client_name:
+                    client_name = f"tg_{telegram_id}_{datetime.utcnow().timestamp():.0f}"
+            else:
+                client_name = f"tg_{telegram_id}_{datetime.utcnow().timestamp():.0f}"
+
+            # Если такой файл уже существует, добавить суффикс
+            candidate_name = client_name
+            suffix = 1
+            while os.path.exists(os.path.join(Config.CONFIGS_DIR, f"{candidate_name}.conf")):
+                candidate_name = f"{client_name}_{suffix}"
+                suffix += 1
+            client_name = candidate_name
 
             admin_rate_limit = Config.ADMIN_RATE_LIMIT if user.is_admin else Config.DEFAULT_RATE_LIMIT
             admin_expiration_days = Config.ADMIN_EXPIRATION_DAYS if user.is_admin else Config.EXPIRATION_DAYS
@@ -146,7 +180,7 @@ async def create_and_send_config_for_user(telegram_id: int, target_message: type
             await target_message.edit_text(
                 text,
                 parse_mode="Markdown",
-                reply_markup=build_config_artifact_keyboard()
+                reply_markup=build_config_artifact_keyboard(config_id)
             )
             return True
 
@@ -202,41 +236,83 @@ async def show_current_config(query: types.CallbackQuery):
         await query.message.edit_text(
             text,
             parse_mode="Markdown",
-            reply_markup=build_config_artifact_keyboard()
+            reply_markup=build_config_artifact_keyboard(config.config_id)
         )
         await query.answer()
 
 
-@router.callback_query(F.data == "send_config_text")
-async def send_config_text(query: types.CallbackQuery):
+@router.callback_query(F.data.startswith("admin_config:"))
+async def show_admin_config(query: types.CallbackQuery):
     telegram_id = query.from_user.id
+    config_id = query.data.split(":", 1)[1]
+
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user or not user.is_admin:
+            await query.answer("❌ У вас нет прав для этой операции", show_alert=True)
+            return
+
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if not config or config.user_id != user.id:
+            await query.answer("❌ Конфиг не найден", show_alert=True)
+            return
+
+        status = "Активный" if config.is_active and not config.is_expired() else "Неактивный"
+        expiration_label = "Неограничено" if user.is_admin else f"{config.days_until_expiration()} дней"
+        expires_at_label = "Неограничено" if user.is_admin else config.expires_at.strftime('%d.%m.%Y')
+
+        text = f"""
+📋 **Информация о конфигах:**
+
+- Имя: `{config.client_name}`
+- IP адрес: `{config.client_ip}`
+- Статус: `{status}`
+- Срок действия: `{expiration_label}`
+- Истекает: `{expires_at_label}`
+"""
+
+        await query.answer("🔎 Открываю конфиг...")
+        await query.message.edit_text(
+            text,
+            parse_mode="Markdown",
+            reply_markup=build_config_artifact_keyboard(config_id)
+        )
+
+
+@router.callback_query(F.data.startswith("sct:"))
+async def send_config_text(query: types.CallbackQuery):
+    config_id = query.data.split(":", 1)[1]
+    telegram_id = query.from_user.id
+
     async with db.async_session() as session:
         user = await DatabaseService.get_user(session, telegram_id)
         if not user:
             await query.answer("❌ Ошибка: пользователь не найден")
             return
 
-        config = await DatabaseService.get_active_config(session, user.id)
-        if not config:
-            await query.answer("❌ У вас нет активного конфига")
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if not config or config.user_id != user.id:
+            await query.answer("❌ Конфиг не найден")
             return
 
-        await query.message.answer(f"```\n{config.wg_config_content}\n```", parse_mode="Markdown")
+        await query.message.answer("```\n" + config.wg_config_content + "\n```", parse_mode="Markdown")
         await query.answer("✅ Текст конфига отправлен")
 
 
-@router.callback_query(F.data == "send_config_file")
+@router.callback_query(F.data.startswith("scf:"))
 async def send_config_file(query: types.CallbackQuery):
+    config_id = query.data.split(":", 1)[1]
     telegram_id = query.from_user.id
+
     async with db.async_session() as session:
         user = await DatabaseService.get_user(session, telegram_id)
         if not user:
             await query.answer("❌ Ошибка: пользователь не найден")
             return
 
-        config = await DatabaseService.get_active_config(session, user.id)
-        if not config:
-            await query.answer("❌ У вас нет активного конфига")
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if not config or config.user_id != user.id:
+            await query.answer("❌ Конфиг не найден")
             return
 
         config_file = types.BufferedInputFile(
@@ -248,6 +324,39 @@ async def send_config_file(query: types.CallbackQuery):
             caption="📄 Файл конфига WireGuard"
         )
         await query.answer("✅ Файл конфига отправлен")
+
+
+@router.callback_query(F.data.startswith("sab:"))
+async def send_amnezia_backup(query: types.CallbackQuery):
+    config_id = query.data.split(":", 1)[1]
+    telegram_id = query.from_user.id
+
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if not config or config.user_id != user.id:
+            await query.answer("❌ Конфиг не найден")
+            return
+
+        amnezia_backup = ConfigManager.generate_amnezia_backup_full(
+            config.wg_config_content,
+            config.client_name
+        )
+        import json
+        backup_json = json.dumps(amnezia_backup, indent=2)
+        backup_file = types.BufferedInputFile(
+            file=backup_json.encode(),
+            filename=f"{config.client_name}_amnezia_backup.backup"
+        )
+        await query.message.answer_document(
+            document=backup_file,
+            caption="📦 JSON бекап конфига"
+        )
+        await query.answer("✅ JSON бекап отправлен")
 
 
 @router.callback_query(F.data == "send_amnezia_backup")
@@ -290,8 +399,20 @@ async def send_setup_instruction_phone(query: types.CallbackQuery):
     
     await query.answer("✅ Инструкция для телефона отправлена")
 
+@router.callback_query(F.data.startswith("sp:"))
+async def send_setup_instruction_phone_with_config(query: types.CallbackQuery):
+    instruction_text = ConfigManager.create_setup_instruction("phone")
+    await query.message.answer(instruction_text, parse_mode="Markdown")
+    await query.answer("✅ Инструкция для телефона отправлена")
+
 @router.callback_query(F.data == "send_setup_instruction_pc")
 async def send_setup_instruction_pc(query: types.CallbackQuery):
+    instruction_text = ConfigManager.create_setup_instruction("pc")
+    await query.message.answer(instruction_text, parse_mode="Markdown")
+    await query.answer("✅ Инструкция для ПК отправлена")
+
+@router.callback_query(F.data.startswith("pc:"))
+async def send_setup_instruction_pc_with_config(query: types.CallbackQuery):
     instruction_text = ConfigManager.create_setup_instruction("pc")
     await query.message.answer(instruction_text, parse_mode="Markdown")
     await query.answer("✅ Инструкция для ПК отправлена")

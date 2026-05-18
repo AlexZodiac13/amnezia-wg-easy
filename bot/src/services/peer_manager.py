@@ -67,6 +67,8 @@ class PeerManager:
 
         # 2. Старт exec-инстанса
         start_res = await PeerManager._docker_request("POST", f"/exec/{exec_id}/start", {"Detach": False})
+        if start_res["status_code"] != 200:
+            return start_res["status_code"], "", f"Docker Exec Start Failed: {start_res['status_code']}"
 
         # Docker возвращает поток в формате: [8 байт заголовка][данные]
         output = start_res["body"]
@@ -74,6 +76,20 @@ class PeerManager:
         if len(output) > 8:
             # Убираем технические заголовки Docker, чтобы получить чистый текст конфига
             clean_output = output[8:].decode(errors="ignore").strip()
+
+        # 3. Получить код выхода команды внутри контейнера
+        inspect_res = await PeerManager._docker_request("GET", f"/exec/{exec_id}/json")
+        if inspect_res["status_code"] != 200:
+            return inspect_res["status_code"], clean_output, f"Docker Exec Inspect Failed: {inspect_res['status_code']}"
+
+        try:
+            exec_meta = json.loads(inspect_res["body"].decode(errors="ignore"))
+            exit_code = exec_meta.get("ExitCode", 0)
+        except Exception as e:
+            return 1, clean_output, f"Failed to parse exec inspect response: {e}"
+
+        if exit_code != 0:
+            return exit_code, clean_output, f"Script exited with code {exit_code}: {clean_output}"
 
         return 0, clean_output, ""
 
@@ -125,11 +141,13 @@ class PeerManager:
                             if line.strip().startswith("PrivateKey"):
                                 # Вычислить публичный ключ из приватного
                                 private_key = line.split("=")[1].strip()
-                                # Оставляем синхронный вызов для локальной утилиты wg,
-                                # так как она обычно отрабатывает мгновенно
                                 import subprocess
-                                cmd = ["bash", "-c", f"echo {private_key} | wg pubkey"]
-                                result = subprocess.run(cmd, capture_output=True, text=True)
+                                result = subprocess.run(
+                                    ["wg", "pubkey"],
+                                    input=private_key,
+                                    capture_output=True,
+                                    text=True
+                                )
                                 client_public_key = result.stdout.strip()
                                 break
             

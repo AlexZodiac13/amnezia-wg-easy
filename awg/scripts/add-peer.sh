@@ -195,11 +195,17 @@ ensure_htb_root() {
 cleanup_peer_rate_limit() {
   local client_ip="$1"
   local ext_if="$2"
+  local rule
 
-  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$DEFAULT_RATE_MBIT" 2>/dev/null || true
-  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$WHITELIST_RATE_MBIT" 2>/dev/null || true
-  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$UNLIMITED_RATE_MBIT" 2>/dev/null || true
-  iptables -t mangle -D PREROUTING -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark 2>/dev/null || true
+  while read -r rule; do
+    if [[ "$rule" == *" -i $IFACE "* && "$rule" == *" -s $client_ip "* ]]; then
+      iptables -t mangle ${rule/-A/-D} 2>/dev/null || true
+    fi
+  done < <(iptables -t mangle -S PREROUTING 2>/dev/null)
+
+  if [[ -n "$ext_if" ]]; then
+    iptables -t mangle -D PREROUTING -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark 2>/dev/null || true
+  fi
 }
 
 apply_peer_rate_limit() {

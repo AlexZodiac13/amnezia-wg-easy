@@ -130,6 +130,22 @@ restore_peers_from_clients() {
   fi
 }
 
+normalize_rate() {
+  local requested_rate="${1:-$AWG_RATE_LIMIT_MBIT}"
+
+  if [[ "$requested_rate" == "0" ]]; then
+    printf '%s\n' "$AWG_UNLIMITED_RATE_MBIT"
+    return
+  fi
+
+  if [[ "$requested_rate" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$requested_rate"
+    return
+  fi
+
+  printf '%s\n' "$AWG_RATE_LIMIT_MBIT"
+}
+
 restore_peer_rate_limits() {
   local clients_dir="${CONFIG_DIR}/clients"
   local ext_if
@@ -155,10 +171,24 @@ restore_peer_rate_limits() {
     ' "$file"
   }
 
+  cleanup_client_rate_rules() {
+    local client_ip="$1"
+    local rule
+
+    while read -r rule; do
+      if [[ "$rule" == *" -i $AWG_INTERFACE "* && "$rule" == *" -s $client_ip "* ]]; then
+        iptables -t mangle ${rule/-A/-D} 2>/dev/null || true
+      fi
+    done < <(iptables -t mangle -S PREROUTING 2>/dev/null)
+  }
+
   [[ -d "$clients_dir" ]] || return 0
 
   ext_if="$(ip route show default 0.0.0.0/0 | awk 'NR==1{print $5}')"
+
+  ensure_htb_root "$AWG_INTERFACE"
   if [[ -n "$ext_if" ]]; then
+    ensure_htb_root "$ext_if"
     # Restore connmark on return traffic so download shaping still works after restart.
     iptables -t mangle -C PREROUTING -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark 2>/dev/null || \
       iptables -t mangle -I PREROUTING 1 -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
@@ -169,15 +199,15 @@ restore_peer_rate_limits() {
     client_ip="$(read_conf_value "Address" "$client_conf")"
     # Parse Rate from comment: "# Rate = 50"
     client_rate="$(awk '/^[[:space:]]*#[[:space:]]*Rate[[:space:]]*=/ { match($0, /[0-9]+/); if (RSTART) print substr($0, RSTART, RLENGTH); exit }' "$client_conf" || true)"
+    client_rate="$(normalize_rate "$client_rate")"
 
     [[ -n "$client_ip" && -n "$client_rate" ]] || continue
 
-    # Apply iptables marks for this peer
-    iptables -t mangle -C PREROUTING -i "$AWG_INTERFACE" -s "$client_ip" -j MARK --set-mark "$client_rate" 2>/dev/null || \
-      iptables -t mangle -I PREROUTING 1 -i "$AWG_INTERFACE" -s "$client_ip" -j MARK --set-mark "$client_rate"
+    cleanup_client_rate_rules "$client_ip"
 
-    iptables -t mangle -C PREROUTING -i "$AWG_INTERFACE" -s "$client_ip" -j CONNMARK --save-mark 2>/dev/null || \
-      iptables -t mangle -I PREROUTING 2 -i "$AWG_INTERFACE" -s "$client_ip" -j CONNMARK --save-mark
+    # Apply iptables marks for this peer
+    iptables -t mangle -I PREROUTING 1 -i "$AWG_INTERFACE" -s "$client_ip" -j MARK --set-mark "$client_rate"
+    iptables -t mangle -I PREROUTING 2 -i "$AWG_INTERFACE" -s "$client_ip" -j CONNMARK --save-mark
 
     restored=$((restored + 1))
   done

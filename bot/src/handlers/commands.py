@@ -43,7 +43,7 @@ def get_admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="📋 Лист")],
-            [KeyboardButton(text="📝 Получить конфиг с именем")],
+            [KeyboardButton(text="📢 Broadcast"), KeyboardButton(text="📝 Получить конфиг с именем")],
             [KeyboardButton(text="📂 Мои конфиги")],
             [KeyboardButton(text="ℹ️ Информация")],
         ],
@@ -119,6 +119,7 @@ Telegram ID: `{telegram_id}`
         await safe_answer(message, info_text, parse_mode="Markdown")
 
 admin_named_config_pending: set[int] = set()
+admin_broadcast_pending: set[int] = set()
 
 @router.message(F.text == "🆘 Поддержка")
 async def support(message: types.Message):
@@ -340,3 +341,93 @@ async def user_list(message: types.Message):
             text += f"Статус: {'👑 Админ' if u.is_admin else '👤 Пользователь'}\n"
         
         await safe_answer(message, text, parse_mode="Markdown")
+
+@router.message(Command("broadcast"))
+async def broadcast_command(message: types.Message):
+    """Команда /broadcast - отправить сообщение всем пользователям"""
+    telegram_id = message.from_user.id
+    
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user or not user.is_admin:
+            await safe_answer(message, "❌ У вас нет прав для этой команды")
+            return
+    
+    admin_broadcast_pending.add(telegram_id)
+    await safe_answer(
+        message,
+        "📨 Введите сообщение для отправки всем пользователям:\n"
+        "(Сообщение будет отправлено со своим форматированием)"
+    )
+
+@router.message(F.text == "📢 Broadcast")
+async def broadcast_button(message: types.Message):
+    """Обработчик кнопки Broadcast"""
+    await broadcast_command(message)
+
+@router.message(lambda message: message.from_user.id in admin_broadcast_pending)
+async def handle_broadcast_message(message: types.Message):
+    """Обработчик текста для broadcast"""
+    telegram_id = message.from_user.id
+    if telegram_id not in admin_broadcast_pending:
+        return
+    
+    # Пропустить команды и кнопки
+    if message.text.startswith("/") or message.text in ["📝 Получить конфиг", "ℹ️ Информация", "🆘 Поддержка", "👥 Пользователи", "📋 Лист", "📝 Получить конфиг с именем", "📂 Мои конфиги"]:
+        return
+    
+    broadcast_text = message.text
+    admin_broadcast_pending.discard(telegram_id)
+    
+    # Показываем, что начинается отправка
+    status_message = await safe_answer(message, "⏳ Начинаю отправку сообщения всем пользователям...\n\nПожалуйста, подождите.")
+    
+    sent_count = 0
+    failed_count = 0
+    
+    async with db.async_session() as session:
+        users = await DatabaseService.get_all_users(session)
+        
+        for user in users:
+            try:
+                # Отправляем сообщение каждому пользователю
+                await asyncio.sleep(0.1)  # Небольшая задержка для избежания rate limiting
+                
+                await message.bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=f"📢 **Сообщение от администратора:**\n\n{broadcast_text}",
+                    parse_mode="Markdown"
+                )
+                
+                # Логируем успешную отправку
+                await DatabaseService.log_broadcast_message(session, telegram_id, user.telegram_id, "sent")
+                sent_count += 1
+                
+            except Exception as e:
+                logger.warning(f"Failed to send broadcast to user {user.telegram_id}: {str(e)}")
+                # Логируем ошибку отправки
+                await DatabaseService.log_broadcast_message(session, telegram_id, user.telegram_id, "failed")
+                failed_count += 1
+    
+    # Отправляем отчет администратору
+    result_text = f"""
+✅ **Broadcast завершён!**
+
+📊 **Статистика:**
+- ✅ Успешно отправлено: `{sent_count}`
+- ❌ Ошибок при отправке: `{failed_count}`
+- 📈 Всего пользователей: `{sent_count + failed_count}`
+
+**Текст сообщения:**
+```
+{broadcast_text}
+```
+    """
+    
+    if status_message:
+        await message.bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=status_message.message_id,
+            text=result_text,
+            parse_mode="Markdown"
+        )

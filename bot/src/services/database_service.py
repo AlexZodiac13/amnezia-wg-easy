@@ -206,3 +206,14 @@ class DatabaseService:
             await session.delete(user_obj)
         
         await session.commit()
+    
+    @staticmethod
+    async def log_broadcast_message(session: AsyncSession, user_id: int, recipient_id: int, status: str = "sent"):
+        """Логировать отправку broadcast сообщения"""
+        log = NotificationLog(
+            config_id=f"broadcast_{recipient_id}",
+            user_id=user_id,
+            notification_type=f"broadcast_{status}"
+        )
+        session.add(log)
+        await session.commit()

@@ -50,6 +50,19 @@ async def test_default_user_config_expires_after_30_days(async_session):
 
 
 @pytest.mark.asyncio
+async def test_create_user_with_large_telegram_id(async_session):
+    large_id = 8847656930
+    user = await DatabaseService.create_user(async_session, telegram_id=large_id, username="biguser")
+
+    assert user is not None
+    assert user.telegram_id == large_id
+
+    fetched = await DatabaseService.get_user(async_session, telegram_id=large_id)
+    assert fetched is not None
+    assert fetched.telegram_id == large_id
+
+
+@pytest.mark.asyncio
 async def test_expiring_and_expired_config_queries(async_session):
     user = await DatabaseService.create_user(async_session, telegram_id=987654321, username="testuser2")
     now = datetime.utcnow()

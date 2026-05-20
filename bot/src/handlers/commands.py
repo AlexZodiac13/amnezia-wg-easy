@@ -208,9 +208,9 @@ async def get_config(message: types.Message):
                 await create_and_send_config_for_user(telegram_id, status_message)
 
 @router.message(F.text == "📂 Мои конфиги")
-async def show_admin_configs(message: types.Message):
+async def show_admin_configs(message: types.Message, telegram_id: int | None = None):
     """Показать все конфиги администратора"""
-    telegram_id = message.from_user.id
+    telegram_id = telegram_id if telegram_id is not None else message.from_user.id
 
     async with db.async_session() as session:
         user = await DatabaseService.get_user(session, telegram_id)
@@ -254,7 +254,7 @@ async def show_admin_configs(message: types.Message):
 async def handle_show_admin_configs(query: types.CallbackQuery):
     telegram_id = query.from_user.id
     await query.answer()
-    await show_admin_configs(query.message)
+    await show_admin_configs(query.message, telegram_id=telegram_id)
 
 @router.callback_query(F.data.startswith("delete_admin_config:"))
 async def delete_admin_config(query: types.CallbackQuery):
@@ -281,7 +281,7 @@ async def delete_admin_config(query: types.CallbackQuery):
 
         await DatabaseService.delete_config(session, config_id)
         await query.answer("✅ Конфиг удалён")
-        await show_admin_configs(query.message)
+        await show_admin_configs(query.message, telegram_id=telegram_id)
 
 @router.message(Command("help"))
 async def help_command(message: types.Message):

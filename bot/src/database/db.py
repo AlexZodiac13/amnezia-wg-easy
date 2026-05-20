@@ -1,9 +1,11 @@
 import asyncio
+import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
 from src.config import Config
 from src.database.models import Base
 
+logger = logging.getLogger(__name__)
 engine = None
 async_session = None
 
@@ -14,6 +16,24 @@ async def init_db():
     
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            result = await conn.execute(text(
+                """
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'users'
+                  AND column_name = 'telegram_id'
+                """
+            ))
+            current_type = result.scalar_one_or_none()
+            if current_type and current_type != 'bigint':
+                await conn.execute(text(
+                    "ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT USING telegram_id::BIGINT"
+                ))
+                logger.info('Upgraded users.telegram_id column to BIGINT')
+        except Exception as e:
+            logger.warning('Failed to migrate telegram_id column to BIGINT: %s', e)
 
 async def get_session():
     if async_session is None:

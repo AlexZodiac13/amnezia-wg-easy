@@ -109,7 +109,7 @@ services:
       - ./bot/src:/app/src
       - ./awg/scripts:/app/scripts:ro
       - ./awg/data:/etc/amnezia/amneziawg
-      - /home/docker/amnezia-wg-easy/instructions:/app/instructions:ro
+      - /home/docker/amnezia-wg-bot/instructions:/app/instructions:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - awg-net

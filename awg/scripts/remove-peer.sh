@@ -11,6 +11,9 @@ CLIENT_PUBLIC_KEY="$2"
 CLIENTS_DIR="/etc/amnezia/amneziawg/clients"
 SERVER_CONFIG="/etc/amnezia/amneziawg/${IFACE}.conf"
 CLIENT_IP=""
+DEFAULT_RATE_MBIT="${AWG_RATE_LIMIT_MBIT:-15}"
+WHITELIST_RATE_MBIT="${AWG_WHITELIST_RATE_MBIT:-200}"
+UNLIMITED_RATE_MBIT="${AWG_UNLIMITED_RATE_MBIT:-1000}"
 
 if [[ -f "$SERVER_CONFIG" ]]; then
   tmp_file="$(mktemp)"

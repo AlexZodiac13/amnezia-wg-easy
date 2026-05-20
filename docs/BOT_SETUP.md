@@ -33,6 +33,8 @@ This will:
 - Start PostgreSQL database
 - Build and start the Telegram bot
 
+> ⚠️ Почти все российские адреса не работают через VPN. Рекомендуется настраивать выборочный обход, чтобы сохранить доступ к местным сервисам.
+
 ### 3. Verify Bot is Running
 
 Check logs:

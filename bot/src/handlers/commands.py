@@ -32,6 +32,7 @@ def get_user_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📝 Получить конфиг")],
+            [KeyboardButton(text="Мессенджер при белых списках (Delta Chat)")],
             [KeyboardButton(text="ℹ️ Информация")],
             [KeyboardButton(text="🆘 Поддержка")],
         ],
@@ -45,6 +46,7 @@ def get_admin_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="👥 Пользователи"), KeyboardButton(text="📋 Лист")],
             [KeyboardButton(text="📢 Broadcast"), KeyboardButton(text="📝 Получить конфиг с именем")],
             [KeyboardButton(text="📂 Мои конфиги")],
+            [KeyboardButton(text="Мессенджер при белых списках (Delta Chat)")],
             [KeyboardButton(text="ℹ️ Информация")],
         ],
         resize_keyboard=True
@@ -140,6 +142,18 @@ async def support(message: types.Message):
 
     """
     await safe_answer(message, support_text, parse_mode="Markdown")
+
+@router.message(F.text == "Мессенджер при белых списках (Delta Chat)")
+async def deltachat_instruction(message: types.Message):
+    """Отправить инструкцию для Delta Chat из файла instructions/deltachat.md."""
+    header = "💬 Мессенджер при белых списках (Delta Chat)\n\n"
+    file_path = "/app/instructions/deltachat.md"  # внутри контейнера
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        await safe_answer(message, header + content, parse_mode="Markdown")
+    except FileNotFoundError:
+        await safe_answer(message, "❌ Файл инструкции Delta Chat не найден. Обратитесь к администратору.")
 
 @router.message(F.text == "📝 Получить конфиг с именем")
 async def request_named_config(message: types.Message):

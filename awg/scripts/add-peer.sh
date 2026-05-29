@@ -23,6 +23,44 @@ UNLIMITED_RATE_MBIT="${AWG_UNLIMITED_RATE_MBIT:-1000}"
 ROOT_DEFAULT_CLASS_ID="9999"
 PUBKEY_PATTERN='^[A-Za-z0-9+/]{43}=$'
 
+next_available_ip() {
+  local subnet="10.80.0.0/16"
+  local start_ip="10.80.0.2"
+  local used_ips
+  
+  # Extract used IPs from server config
+  used_ips=$(awk '
+    /^[[:space:]]*AllowedIPs[[:space:]]*=/ {
+      split($0, parts, "=")
+      ip = parts[2]
+      gsub(/[[:space:]]+/, "", ip)
+      # Extract IP part before /
+      split(ip, ip_parts, "/")
+      print ip_parts[1]
+    }
+  ' "$SERVER_CONFIG" | sort -u)
+  
+  # Find next available IP starting from 10.80.0.2
+  local ip_num=$(echo "$start_ip" | awk -F. '{print ($1*256*256*256) + ($2*256*256) + ($3*256) + $4}')
+  local max_ip=$(echo "10.80.255.254" | awk -F. '{print ($1*256*256*256) + ($2*256*256) + ($3*256) + $4}')
+  
+  while [ $ip_num -le $max_ip ]; do
+    local candidate_ip=$(awk -v num=$ip_num 'BEGIN {
+      printf "%d.%d.%d.%d", (num/(256*256*256))%256, (num/(256*256))%256, (num/256)%256, num%256
+    }')
+    
+    if ! echo "$used_ips" | grep -q "^$candidate_ip$"; then
+      echo "$candidate_ip/32"
+      return 0
+    fi
+    
+    ip_num=$((ip_num + 1))
+  done
+  
+  echo "No available IP addresses in subnet $subnet" >&2
+  return 1
+}
+
 server_value() {
   local key="$1"
   awk -F'=' -v wanted_key="$key" '
@@ -154,6 +192,22 @@ ensure_htb_root() {
   tc filter add dev "$device" parent 1: protocol ip prio 1 handle "$UNLIMITED_RATE_MBIT" fw flowid "1:${UNLIMITED_RATE_MBIT}" 2>/dev/null || true
 }
 
+cleanup_peer_rate_limit() {
+  local client_ip="$1"
+  local ext_if="$2"
+  local rule
+
+  while read -r rule; do
+    if [[ "$rule" == *" -i $IFACE "* && "$rule" == *" -s $client_ip "* ]]; then
+      iptables -t mangle ${rule/-A/-D} 2>/dev/null || true
+    fi
+  done < <(iptables -t mangle -S PREROUTING 2>/dev/null)
+
+  if [[ -n "$ext_if" ]]; then
+    iptables -t mangle -D PREROUTING -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark 2>/dev/null || true
+  fi
+}
+
 apply_peer_rate_limit() {
   local client_ip_cidr="$1"
   local rate_mbit="$2"
@@ -166,11 +220,10 @@ apply_peer_rate_limit() {
   ensure_htb_root "$IFACE"
   ensure_htb_root "$ext_if"
 
-  iptables -t mangle -C PREROUTING -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit" 2>/dev/null || \
-    iptables -t mangle -I PREROUTING 1 -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit"
+  cleanup_peer_rate_limit "$client_ip" "$ext_if"
 
-  iptables -t mangle -C PREROUTING -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark 2>/dev/null || \
-    iptables -t mangle -I PREROUTING 2 -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark
+  iptables -t mangle -I PREROUTING 1 -i "$IFACE" -s "$client_ip" -j MARK --set-mark "$rate_mbit"
+  iptables -t mangle -I PREROUTING 2 -i "$IFACE" -s "$client_ip" -j CONNMARK --save-mark
 
   iptables -t mangle -C PREROUTING -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark 2>/dev/null || \
     iptables -t mangle -I PREROUTING 1 -i "$ext_if" -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
@@ -202,7 +255,7 @@ fi
 
 CLIENT_NAME="${1:-client-$(date +%Y%m%d%H%M%S)}"
 ENDPOINT="${2:-${AWG_ENDPOINT:-change-me:5066}}"
-CLIENT_IP_CIDR="${3:-$DEFAULT_CLIENT_IP_CIDR}"
+CLIENT_IP_CIDR="${3:-$(next_available_ip)}"
 PRESHARED_KEY="${4:-}"
 CLIENT_RATE_MBIT="$(normalize_rate "${5:-}")"
 CLIENT_PERSISTENT_KEEPALIVE="${AWG_CLIENT_PERSISTENT_KEEPALIVE:-0}"
@@ -217,8 +270,6 @@ mkdir -p "$CLIENTS_DIR"
 CLIENT_PRIVATE_KEY_FILE="$CLIENTS_DIR/${CLIENT_NAME}.privatekey"
 CLIENT_PUBLIC_KEY_FILE="$CLIENTS_DIR/${CLIENT_NAME}.publickey"
 CLIENT_CONFIG_FILE="$CLIENTS_DIR/${CLIENT_NAME}.conf"
-CLIENT_QR_FILE="$CLIENTS_DIR/${CLIENT_NAME}.png"
-CLIENT_QR_TXT_FILE="$CLIENTS_DIR/${CLIENT_NAME}_qr.txt"
 
 awg genkey | tee "$CLIENT_PRIVATE_KEY_FILE" | awg pubkey > "$CLIENT_PUBLIC_KEY_FILE"
 chmod 600 "$CLIENT_PRIVATE_KEY_FILE"
@@ -294,41 +345,8 @@ apply_peer_rate_limit "$CLIENT_IP_CIDR" "$CLIENT_RATE_MBIT"
 # Make config readable (755 dir, 644 files)
 chmod 644 "$CLIENT_CONFIG_FILE"
 
-# Generate QR codes with Python
-if command -v python3 &>/dev/null; then
-  # PNG QR code
-  python3 -c "
-import qrcode
-try:
-    with open('$CLIENT_CONFIG_FILE', 'r') as f:
-        data = f.read()
-    qr = qrcode.QRCode()
-    qr.add_data(data)
-    qr.make()
-    qr.make_image().save('$CLIENT_QR_FILE')
-except:
-    pass
-" && chmod 644 "$CLIENT_QR_FILE" 2>/dev/null || true
-  
-  # ASCII QR code
-  python3 -c "
-import qrcode
-try:
-    with open('$CLIENT_CONFIG_FILE', 'r') as f:
-        data = f.read()
-    qr = qrcode.QRCode()
-    qr.add_data(data)
-    qr.make()
-    qr.print_ascii()
-except:
-    pass
-" > "$CLIENT_QR_TXT_FILE" 2>&1 && chmod 644 "$CLIENT_QR_TXT_FILE" || true
-fi
-
 echo "Client created: $CLIENT_NAME"
 echo "Client config: $CLIENT_CONFIG_FILE"
 echo "Client private key: $CLIENT_PRIVATE_KEY_FILE"
 echo "Client public key: $CLIENT_PUBLIC_KEY_FILE"
-[[ -f "$CLIENT_QR_FILE" ]] && echo "Client QR (PNG): $CLIENT_QR_FILE"
-[[ -f "$CLIENT_QR_TXT_FILE" ]] && echo "Client QR (text): $CLIENT_QR_TXT_FILE"
 echo "Peer added: $CLIENT_PUBLIC_KEY -> $CLIENT_IP_CIDR (rate ${CLIENT_RATE_MBIT}mbit)"

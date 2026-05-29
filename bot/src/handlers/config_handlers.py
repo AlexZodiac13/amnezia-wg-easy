@@ -343,7 +343,7 @@ async def send_config_file(query: types.CallbackQuery):
         )
         await query.message.answer_document(
             document=config_file,
-            caption="📄 Файл конфига WireGuard"
+            caption="📄 Файл конфига Amnezia WireGuard"
         )
         await query.answer("✅ Файл конфига отправлен")
 

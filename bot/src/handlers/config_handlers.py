@@ -52,6 +52,7 @@ def build_config_artifact_keyboard(config_id: str | None = None) -> InlineKeyboa
     if config_id:
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="JSON бекап (рекомендуется)", callback_data=f"sab:{config_id}")],
+            [InlineKeyboardButton(text="💻 Бекап для ПК", callback_data=f"pc_backup:{config_id}")],
             [InlineKeyboardButton(text="Текст конфига", callback_data=f"sct:{config_id}")],
             [InlineKeyboardButton(text="Файл конфига", callback_data=f"scf:{config_id}")],
             [InlineKeyboardButton(text="📱 Инструкция для телефона", callback_data=f"sp:{config_id}")],
@@ -60,6 +61,7 @@ def build_config_artifact_keyboard(config_id: str | None = None) -> InlineKeyboa
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="JSON бекап (рекомендуется)", callback_data="send_amnezia_backup")],
+        [InlineKeyboardButton(text="💻 Бекап для ПК", callback_data="send_pc_backup")],
         [InlineKeyboardButton(text="Текст конфига", callback_data="send_config_text")],
         [InlineKeyboardButton(text="Файл конфига", callback_data="send_config_file")],
         [InlineKeyboardButton(text="📱 Инструкция для телефона", callback_data="send_setup_instruction_phone")],
@@ -324,6 +326,72 @@ async def send_config_file(query: types.CallbackQuery):
             caption="📄 Файл конфига WireGuard"
         )
         await query.answer("✅ Файл конфига отправлен")
+
+
+@router.callback_query(F.data.startswith("pc_backup:"))
+async def send_pc_backup(query: types.CallbackQuery):
+    config_id = query.data.split(":", 1)[1]
+    telegram_id = query.from_user.id
+
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if not config or config.user_id != user.id:
+            await query.answer("❌ Конфиг не найден")
+            return
+
+        amnezia_backup = ConfigManager.generate_pc_backup_full(
+            config.wg_config_content,
+            config.client_name
+        )
+        import json
+        backup_json = json.dumps(amnezia_backup, indent=2)
+        backup_file = types.BufferedInputFile(
+            file=backup_json.encode(),
+            filename=f"{config.client_name}_amnezia_pc_backup.backup"
+        )
+
+        await query.message.answer_document(
+            document=backup_file,
+            caption="💻 Персональный бекап для ПК"
+        )
+        await query.answer("✅ Бекап для ПК отправлен")
+
+
+@router.callback_query(F.data == "send_pc_backup")
+async def send_pc_backup_default(query: types.CallbackQuery):
+    telegram_id = query.from_user.id
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_active_config(session, user.id)
+        if not config:
+            await query.answer("❌ У вас нет активного конфига")
+            return
+
+        amnezia_backup = ConfigManager.generate_pc_backup_full(
+            config.wg_config_content,
+            config.client_name
+        )
+        import json
+        backup_json = json.dumps(amnezia_backup, indent=2)
+        backup_file = types.BufferedInputFile(
+            file=backup_json.encode(),
+            filename=f"{config.client_name}_amnezia_pc_backup.backup"
+        )
+
+        await query.message.answer_document(
+            document=backup_file,
+            caption="💻 Персональный бекап для ПК"
+        )
+    await query.answer("✅ Бекап для ПК отправлен")
 
 
 @router.callback_query(F.data.startswith("sab:"))

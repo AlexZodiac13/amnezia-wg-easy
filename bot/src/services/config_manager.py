@@ -7,8 +7,9 @@ logger = logging.getLogger(__name__)
 
 class ConfigManager:
     """Управление конфигами клиентов"""
-    
+
     BACKUP_TEMPLATE_PATH = os.getenv("AMNEZIA_BACKUP_TEMPLATE_PATH", "/app/instructions/AmneziaVPN.backup")
+    PC_BACKUP_TEMPLATE_PATH = os.getenv("AMNEZIA_PC_BACKUP_TEMPLATE_PATH", "/app/instructions/AmneziaVPN-pc.backup")
 
     
     @staticmethod
@@ -58,29 +59,30 @@ class ConfigManager:
         return backup
     
     @staticmethod
-    def generate_amnezia_backup_full(config_content: str, client_name: str, server_endpoint: str = "wg.owgrant.com") -> dict:
-        """Генерировать полный JSON бекап Amnezia с применением пользовательского конфига к шаблону.
-        
-        Загружает базовый backup с параметрами приложения (язык, приложения, режимы обхода)
-        и подставляет пользовательский конфиг WireGuard.
-        """
+    def generate_backup_from_template(
+        config_content: str,
+        client_name: str,
+        template_path: str,
+        server_endpoint: str = "wg.owgrant.com",
+        app_platform: str = "Android"
+    ) -> dict:
+        """Генерировать персональный backup из шаблона, заменяя серверный конфиг."""
         try:
             parsed = ConfigManager.parse_wg_config(config_content)
-            
-            # Загружаем шаблонный backup файл
+
             backup_data = {}
-            if os.path.exists(ConfigManager.BACKUP_TEMPLATE_PATH):
+            if os.path.exists(template_path):
                 try:
-                    with open(ConfigManager.BACKUP_TEMPLATE_PATH, 'r', encoding='utf-8') as f:
+                    with open(template_path, 'r', encoding='utf-8') as f:
                         backup_data = json.load(f)
                 except Exception as e:
-                    logger.warning(f"Failed to load backup template: {e}")
+                    logger.warning(f"Failed to load backup template from {template_path}: {e}")
                     backup_data = {}
             
             # Если шаблон не загружен или пуст, используем минимальную структуру
             if not backup_data:
                 backup_data = {
-                    "AppPlatform": "Android",
+                    "AppPlatform": app_platform,
                     "Conf/appLanguage": "ru_RU",
                     "Conf/autoStart": False,
                     "Conf/killSwitchEnabled": True,
@@ -196,15 +198,37 @@ class ConfigManager:
             primary_server["containers"] = [existing_container]
             primary_server["hostName"] = endpoint.split(':')[0] if ':' in endpoint else endpoint
             
-            # Обновляем список серверов в backup
+            backup_data["AppPlatform"] = app_platform
             backup_data["Servers/serversList"] = json.dumps(servers_list, indent=4) if servers_list_was_string else servers_list
             backup_data["Servers/defaultServerIndex"] = 0
-            
+
             return backup_data
-            
+
         except Exception as e:
-            logger.error(f"Failed to generate full amnezia backup: {e}")
+            logger.error(f"Failed to generate backup from template: {e}")
             return {}
+
+    @staticmethod
+    def generate_amnezia_backup_full(config_content: str, client_name: str, server_endpoint: str = "wg.owgrant.com") -> dict:
+        """Генерировать персональный JSON бекап Amnezia для телефона из шаблона."""
+        return ConfigManager.generate_backup_from_template(
+            config_content=config_content,
+            client_name=client_name,
+            template_path=ConfigManager.BACKUP_TEMPLATE_PATH,
+            server_endpoint=server_endpoint,
+            app_platform="Android"
+        )
+
+    @staticmethod
+    def generate_pc_backup_full(config_content: str, client_name: str, server_endpoint: str = "wg.owgrant.com") -> dict:
+        """Генерировать персональный JSON бекап Amnezia для ПК из шаблона."""
+        return ConfigManager.generate_backup_from_template(
+            config_content=config_content,
+            client_name=client_name,
+            template_path=ConfigManager.PC_BACKUP_TEMPLATE_PATH,
+            server_endpoint=server_endpoint,
+            app_platform="Windows"
+        )
     
     @staticmethod
     def create_setup_instruction(device_type: str = "phone") -> str:

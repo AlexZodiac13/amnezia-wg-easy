@@ -49,23 +49,19 @@ async def get_next_available_ip(session) -> str:
 
 
 def build_config_artifact_keyboard(config_id: str | None = None) -> InlineKeyboardMarkup:
+    # Единый вид кнопок: «Настройки телефона», «Настройки ПК», плюс подменю «Для продвинутых пользователей»
     if config_id:
         return InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="JSON бекап (рекомендуется)", callback_data=f"sab:{config_id}")],
-            [InlineKeyboardButton(text="💻 Бекап для ПК", callback_data=f"pc_backup:{config_id}")],
-            [InlineKeyboardButton(text="Текст конфига", callback_data=f"sct:{config_id}")],
-            [InlineKeyboardButton(text="Файл конфига", callback_data=f"scf:{config_id}")],
-            [InlineKeyboardButton(text="📱 Инструкция для телефона", callback_data=f"sp:{config_id}")],
-            [InlineKeyboardButton(text="💻 Инструкция для ПК", callback_data=f"pc:{config_id}")],
+            [InlineKeyboardButton(text="📱 Настройки телефона", callback_data=f"setup_phone:{config_id}")],
+            [InlineKeyboardButton(text="💻 Настройки ПК", callback_data=f"setup_pc:{config_id}")],
+            [InlineKeyboardButton(text="⚙️ Для продвинутых пользователей", callback_data=f"adv:{config_id}")],
         ])
 
+    # Фолбэк без config_id (на случай, если будут использоваться общие кнопки с активным конфигом)
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="JSON бекап (рекомендуется)", callback_data="send_amnezia_backup")],
-        [InlineKeyboardButton(text="💻 Бекап для ПК", callback_data="send_pc_backup")],
-        [InlineKeyboardButton(text="Текст конфига", callback_data="send_config_text")],
-        [InlineKeyboardButton(text="Файл конфига", callback_data="send_config_file")],
-        [InlineKeyboardButton(text="📱 Инструкция для телефона", callback_data="send_setup_instruction_phone")],
-        [InlineKeyboardButton(text="💻 Инструкция для ПК", callback_data="send_setup_instruction_pc")],
+        [InlineKeyboardButton(text="📱 Настройки телефона", callback_data="setup_phone")],
+        [InlineKeyboardButton(text="💻 Настройки ПК", callback_data="setup_pc")],
+        [InlineKeyboardButton(text="⚙️ Для продвинутых пользователей", callback_data="adv")],
     ])
 
 
@@ -175,8 +171,7 @@ async def create_and_send_config_for_user(
 - Срок действия: `{expiration_label}`
 - Истекает: `{expires_at_label}`
 
-Нажмите кнопку ниже, чтобы получить нужный артефакт.
-Рекомендуем воспользоваться JSON бекапом для импорта в приложение Amnezia, так как он содержит все необходимые данные и уже настроен для удобного использования Телеграмом, Ютубом, Инстаграмом и Вотсапом.
+Выберите, где будете настраивать VPN: телефон или ПК. После получения бекапа я предложу показать инструкцию для выбранного устройства.
             """
 
             await target_message.edit_text(
@@ -280,6 +275,31 @@ async def show_admin_config(query: types.CallbackQuery):
             reply_markup=build_config_artifact_keyboard(config_id)
         )
 
+@router.callback_query(F.data.startswith("adv:"))
+async def show_advanced_menu(query: types.CallbackQuery):
+    """Показать подменю «Для продвинутых пользователей» с текстом/файлом конфига."""
+    config_id = query.data.split(":", 1)[1]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📄 Текст конфига", callback_data=f"sct:{config_id}")],
+        [InlineKeyboardButton(text="📎 Файл конфига", callback_data=f"scf:{config_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_art:{config_id}")],
+    ])
+    await query.message.edit_text(
+        "⚙️ Для продвинутых пользователей:\nВыберите формат получения конфига:",
+        reply_markup=keyboard
+    )
+    await query.answer()
+
+@router.callback_query(F.data.startswith("back_art:"))
+async def back_to_artifacts(query: types.CallbackQuery):
+    """Вернуться к основным артефактам (настройки телефона/ПК)."""
+    config_id = query.data.split(":", 1)[1]
+    await query.message.edit_text(
+        "Выберите действие:",
+        reply_markup=build_config_artifact_keyboard(config_id)
+    )
+    await query.answer()
+
 
 @router.callback_query(F.data.startswith("sct:"))
 async def send_config_text(query: types.CallbackQuery):
@@ -326,6 +346,157 @@ async def send_config_file(query: types.CallbackQuery):
             caption="📄 Файл конфига WireGuard"
         )
         await query.answer("✅ Файл конфига отправлен")
+
+@router.callback_query(F.data.startswith("setup_pc:"))
+async def setup_pc_and_offer_instruction(query: types.CallbackQuery):
+    """Отправить бекап для ПК и предложить кнопку с инструкцией для ПК."""
+    config_id = query.data.split(":", 1)[1]
+    telegram_id = query.from_user.id
+
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if not config or config.user_id != user.id:
+            await query.answer("❌ Конфиг не найден")
+            return
+
+        amnezia_backup = ConfigManager.generate_pc_backup_full(
+            config.wg_config_content,
+            config.client_name
+        )
+        import json
+        backup_json = json.dumps(amnezia_backup, indent=2)
+        backup_file = types.BufferedInputFile(
+            file=backup_json.encode(),
+            filename=f"{config.client_name}_amnezia_pc_backup.backup"
+        )
+
+        await query.message.answer_document(
+            document=backup_file,
+            caption="💻 Персональный бекап для ПК"
+        )
+
+        # Предложить показать инструкцию
+        instruct_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💻 Показать инструкцию для ПК", callback_data=f"pc:{config_id}")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_art:{config_id}")],
+        ])
+        await query.message.answer(
+            "Хотите получить инструкцию по настройке ПК?",
+            reply_markup=instruct_kb
+        )
+    await query.answer("✅ Бекап для ПК отправлен")
+
+@router.callback_query(F.data.startswith("setup_phone:"))
+async def setup_phone_and_offer_instruction(query: types.CallbackQuery):
+    """Отправить бекап для телефона и предложить кнопку с инструкцией для телефона."""
+    config_id = query.data.split(":", 1)[1]
+    telegram_id = query.from_user.id
+
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+
+        config = await DatabaseService.get_config_by_id(session, config_id)
+        if not config or config.user_id != user.id:
+            await query.answer("❌ Конфиг не найден")
+            return
+
+        amnezia_backup = ConfigManager.generate_amnezia_backup_full(
+            config.wg_config_content,
+            config.client_name
+        )
+        import json
+        backup_json = json.dumps(amnezia_backup, indent=2)
+        backup_file = types.BufferedInputFile(
+            file=backup_json.encode(),
+            filename=f"{config.client_name}_amnezia_backup.backup"
+        )
+        await query.message.answer_document(
+            document=backup_file,
+            caption="📱 Бекап для приложения Amnezia (телефон)"
+        )
+
+        # Предложить показать инструкцию
+        instruct_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📱 Показать инструкцию для телефона", callback_data=f"sp:{config_id}")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"back_art:{config_id}")],
+        ])
+        await query.message.answer(
+            "Хотите получить инструкцию по настройке телефона?",
+            reply_markup=instruct_kb
+        )
+    await query.answer("✅ Бекап для телефона отправлен")
+
+@router.callback_query(F.data == "setup_pc")
+async def setup_pc_default(query: types.CallbackQuery):
+    telegram_id = query.from_user.id
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+        config = await DatabaseService.get_active_config(session, user.id)
+        if not config:
+            await query.answer("❌ У вас нет активного конфига")
+            return
+
+        # Переиспользуем логику с config_id
+        class Q:
+            data = f"setup_pc:{config.config_id}"
+            from_user = query.from_user
+            message = query.message
+            def __getattr__(self, name):
+                return getattr(query, name)
+        await setup_pc_and_offer_instruction(Q)  # type: ignore
+
+@router.callback_query(F.data == "setup_phone")
+async def setup_phone_default(query: types.CallbackQuery):
+    telegram_id = query.from_user.id
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+        config = await DatabaseService.get_active_config(session, user.id)
+        if not config:
+            await query.answer("❌ У вас нет активного конфига")
+            return
+
+        class Q:
+            data = f"setup_phone:{config.config_id}"
+            from_user = query.from_user
+            message = query.message
+            def __getattr__(self, name):
+                return getattr(query, name)
+        await setup_phone_and_offer_instruction(Q)  # type: ignore
+
+@router.callback_query(F.data == "adv")
+async def show_advanced_menu_default(query: types.CallbackQuery):
+    telegram_id = query.from_user.id
+    async with db.async_session() as session:
+        user = await DatabaseService.get_user(session, telegram_id)
+        if not user:
+            await query.answer("❌ Ошибка: пользователь не найден")
+            return
+        config = await DatabaseService.get_active_config(session, user.id)
+        if not config:
+            await query.answer("❌ У вас нет активного конфига")
+            return
+
+        class Q:
+            data = f"adv:{config.config_id}"
+            from_user = query.from_user
+            message = query.message
+            def __getattr__(self, name):
+                return getattr(query, name)
+        await show_advanced_menu(Q)  # type: ignore
 
 
 @router.callback_query(F.data.startswith("pc_backup:"))

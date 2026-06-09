@@ -1,0 +1,1 @@
+[MTProxy](https://t.me/proxy?server=vpn.owgrant.com&port=3128&secret=ee92146a15931196032ceed4b14047b80176706e2e6f776772616e742e636f6d)

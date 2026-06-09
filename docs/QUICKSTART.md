@@ -74,7 +74,7 @@ docker compose logs -f bot
 - Docker & Docker Compose
 - Telegram Bot Token
 - Ваш Telegram ID
-- Открытый порт 5066
+- Открытый порт 5060
 
 ---
 

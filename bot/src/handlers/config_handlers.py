@@ -49,7 +49,7 @@ async def get_next_available_ip(session) -> str:
 
 
 def build_config_artifact_keyboard(config_id: str | None = None) -> InlineKeyboardMarkup:
-    # Единый вид кнопок: «Настройки телефона», «Настройки ПК», плюс подменю «Для продвинутых пользователей»
+    # Основное меню: только выбор устройства (телефон/ПК), инструкции будут после бекапа
     if config_id:
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📱 Настройки телефона", callback_data=f"setup_phone:{config_id}")],
@@ -57,7 +57,7 @@ def build_config_artifact_keyboard(config_id: str | None = None) -> InlineKeyboa
             [InlineKeyboardButton(text="⚙️ Для продвинутых пользователей", callback_data=f"adv:{config_id}")],
         ])
 
-    # Фолбэк без config_id (на случай, если будут использоваться общие кнопки с активным конфигом)
+    # Фолбэк без config_id
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📱 Настройки телефона", callback_data="setup_phone")],
         [InlineKeyboardButton(text="💻 Настройки ПК", callback_data="setup_pc")],

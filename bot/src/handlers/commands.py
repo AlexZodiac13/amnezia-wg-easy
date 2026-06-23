@@ -155,6 +155,18 @@ async def deltachat_instruction(message: types.Message):
     except FileNotFoundError:
         await safe_answer(message, "❌ Файл инструкции Delta Chat не найден. Обратитесь к администратору.")
 
+@router.message(F.text == "MTProxy для Telegram")
+async def mtproxy_instruction(message: types.Message):
+    """Отправить инструкцию для MTProxy из файла instructions/mtproxy.md."""
+    header = "💬 MTProxy для Telegram\n\n"
+    file_path = "/app/instructions/mtproxy.md"  # внутри контейнера
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        await safe_answer(message, header + content, parse_mode="Markdown")
+    except FileNotFoundError:
+        await safe_answer(message, "❌ Файл инструкции Delta Chat не найден. Обратитесь к администратору.")
+
 @router.message(F.text == "📝 Получить конфиг с именем")
 async def request_named_config(message: types.Message):
     telegram_id = message.from_user.id

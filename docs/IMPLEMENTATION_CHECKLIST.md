@@ -181,7 +181,7 @@
 - ✅ Docker & Docker Compose установлены
 - ✅ Telegram Bot Token получен
 - ✅ Ваш Telegram ID получен
-- ✅ Порт 5066 доступен
+- ✅ Порт 5060 доступен
 
 ### Deployment ready
 - ✅ Все файлы созданы

@@ -178,7 +178,7 @@ DELIVERY_MANIFEST.md          (этот файл)     📦 Manifest
 # 1. Нужны данные
 - TELEGRAM_BOT_TOKEN (от @BotFather)
 - ADMIN_TELEGRAM_ID (от @userinfobot)
-- Открытый порт 5066
+- Открытый порт 5060
 
 # 2. Запустить
 cp .env.bot .env

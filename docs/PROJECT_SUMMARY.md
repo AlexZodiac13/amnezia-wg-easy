@@ -213,7 +213,7 @@ CRUD операции:
    - Alpine Linux контейнер
    - NET_ADMIN capabilities
    - /dev/net/tun device
-   - Порт: 5066/udp (configurable)
+   - Порт: 5060/udp (configurable)
    - Volumes: конфиги и скрипты
 
 2. **postgres** (PostgreSQL 16)
@@ -443,7 +443,7 @@ docker compose logs bot
 - DEFAULT_RATE_LIMIT/EXPIRATION_DAYS/NOTIFICATION_DAYS
 
 ### Порты
-- VPN: 5066/udp (configurable)
+- VPN: 5060/udp (configurable)
 - PostgreSQL: 5432 (internal)
 - Bot: N/A (polling mode)
 

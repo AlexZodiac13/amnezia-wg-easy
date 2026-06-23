@@ -103,7 +103,7 @@ class ConfigManager:
             # Параметры сервера
             server_pub_key = parsed.get("peer", {}).get("PublicKey", "")
             psk_key = parsed.get("peer", {}).get("PresharedKey", "")
-            endpoint = parsed.get("peer", {}).get("Endpoint", f"{server_endpoint}:5066")
+            endpoint = parsed.get("peer", {}).get("Endpoint", f"{server_endpoint}:5060")
             allowed_ips = parsed.get("peer", {}).get("AllowedIPs", "0.0.0.0/0, ::/0").split(", ")
             persistent_keep_alive = parsed.get("peer", {}).get("PersistentKeepalive", "25")
             
@@ -175,7 +175,7 @@ class ConfigManager:
                 "hostName": endpoint.split(':')[0] if ':' in endpoint else endpoint,
                 "mtu": mtu,
                 "persistent_keep_alive": persistent_keep_alive,
-                "port": int(endpoint.split(':')[1]) if ':' in endpoint else 5066,
+                "port": int(endpoint.split(':')[1]) if ':' in endpoint else 5060,
                 "psk_key": psk_key,
                 "server_pub_key": server_pub_key
             }

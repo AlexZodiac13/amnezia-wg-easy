@@ -254,7 +254,7 @@ if [[ $# -gt 5 ]]; then
 fi
 
 CLIENT_NAME="${1:-client-$(date +%Y%m%d%H%M%S)}"
-ENDPOINT="${2:-${AWG_ENDPOINT:-change-me:5066}}"
+ENDPOINT="${2:-${AWG_ENDPOINT:-change-me:5060}}"
 CLIENT_IP_CIDR="${3:-$(next_available_ip)}"
 PRESHARED_KEY="${4:-}"
 CLIENT_RATE_MBIT="$(normalize_rate "${5:-}")"

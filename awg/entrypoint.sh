@@ -112,8 +112,17 @@ restore_peers_from_clients() {
 
     [[ -n "$client_private_key" && -n "$client_ip" ]] || continue
 
-    client_public_key="$(printf '%s' "$client_private_key" | awg pubkey 2>/dev/null || true)"
-    [[ -n "$client_public_key" ]] || continue
+    CLIENT_PUBLIC_KEY_FILE="${client_conf%.conf}.publickey"
+    if [[ -f "$CLIENT_PUBLIC_KEY_FILE" ]]; then
+      client_public_key="$(cat "$CLIENT_PUBLIC_KEY_FILE")"
+    else
+      client_public_key="$(printf '%s' "$client_private_key" | awg pubkey 2>/dev/null || true)"
+    fi
+
+    [[ -n "$client_private_key" && -n "$client_ip" && -n "$client_public_key" ]] || continue
+
+    # Remove any stale peer state before restoring from client config.
+    awg set "$AWG_INTERFACE" peer "$client_public_key" remove 2>/dev/null || true
 
     if [[ -n "$client_psk" ]]; then
       awg set "$AWG_INTERFACE" peer "$client_public_key" preshared-key <(printf '%s' "$client_psk") allowed-ips "$client_ip"
@@ -218,9 +227,9 @@ restore_peer_rate_limits() {
   fi
 }
 
-if ! awg show "$AWG_INTERFACE" peers | grep -q .; then
-  restore_peers_from_clients
-fi
+# Always restore peers from persisted client configs after interface startup.
+# This ensures peer state is rebuilt correctly after container or host restart.
+restore_peers_from_clients
 
 # Ensure VPN clients can reach the internet when host FORWARD policy is DROP.
 EXT_IF="$(ip route show default 0.0.0.0/0 | awk 'NR==1{print $5}')"
